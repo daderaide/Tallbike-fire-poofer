@@ -51,163 +51,155 @@ def print_and_wait(text: str, sleep_time: int = 2) -> None:
     sleep(sleep_time)
 
 
-# get LCD infos/properties
+# Initialize LCD
 print("LCD is on I2C address {}".format(lcd.addr))
 print("LCD has {} columns and {} rows".format(lcd.cols, lcd.rows))
-print("LCD is used with a charsize of {}".format(lcd.charsize))
-print("Cursor position is {}".format(lcd.cursor_position))
 
-# start LCD, not automatically called during init to be Arduino compatible
+# Start LCD, not automatically called during init to be Arduino compatible
 lcd.begin()
+lcd.backlight()  # Make sure backlight is on
+lcd.no_cursor()  # Hide cursor for cleaner display
 
-# print text on sceen at first row, starting on first column
-lcd.print("Hello World")
-print_and_wait("Show 'Hello World' on LCD")
-
-# turn LCD off
-lcd.no_backlight()
-print_and_wait("Turn LCD backlight off")
-
-# get current backlight value
-print("Backlight value: {}".format(lcd.get_backlight()))
-
-# turn LCD on
-lcd.backlight()
-print_and_wait("Turn LCD backlight on")
-
-# get current backlight value
-print("Backlight value: {}".format(lcd.get_backlight()))
-
-# clear LCD display content
-lcd.clear()
-print_and_wait("Clear display content")
-
-# turn cursor on (show)
-lcd.cursor()
-print_and_wait("Turn cursor on (show)")
-
-# blink cursor
-lcd.blink()
-print_and_wait("Blink cursor")
-
-# return cursor to home position
-lcd.home()
-print_and_wait("Return cursor to home position")
-
-# stop blinking cursor
-lcd.no_blink()
-print_and_wait("Stop blinking cursor")
-
-# turn cursor off (hide)
-lcd.no_cursor()
-print_and_wait("Turn cursor off (hide)")
-
-# print_and_wait text on sceen
-lcd.print("Hello again")
-print_and_wait("Show 'Hello again' on LCD")
-
-# turn display off
-lcd.no_display()
-print_and_wait("Turn LCD off")
-
-# turn display on
-lcd.display()
-print_and_wait("Turn LCD on")
-
-# scroll display to the left
-for _ in "Hello again":
-    lcd.scroll_display_left()
-    sleep(0.5)
-print_and_wait("Scroll display to the left")
-
-# scroll display to the right
-for _ in "Hello again":
-    lcd.scroll_display_right()
-    sleep(0.5)
-print_and_wait("Scroll display to the right")
-
-# set text flow right to left
-lcd.clear()
-lcd.set_cursor(col=12, row=0)
-lcd.right_to_left()
-lcd.print("Right to left")
-print_and_wait("Set text flow right to left")
-
-# set text flow left to right
-lcd.clear()
-lcd.set_cursor(col=0, row=0)
-lcd.left_to_right()
-lcd.print("Left to right")
-print_and_wait("Set text flow left to right")
-
-# activate autoscroll
-lcd.autoscroll()
-print_and_wait("Activate autoscroll")
-
-# disable autoscroll
-lcd.no_autoscroll()
-print_and_wait("Disable autoscroll")
-
-# set cursor to second line, seventh column
-lcd.clear()
-lcd.cursor()
-# lcd.cursor_position = (7, 1)
-lcd.set_cursor(col=7, row=1)
-print_and_wait("Set cursor to row 1, column 7")
-lcd.no_cursor()
-
-# set custom char number 0 as :-)
-# custom char can be set for location 0 ... 7
-lcd.create_char(
-    location=0,
-    charmap=[0x00, 0x00, 0x11, 0x04, 0x04, 0x11, 0x0E, 0x00]
-    # this is the binary matrix, feel it, see it
-    # 00000
-    # 00000
-    # 10001
-    # 00100
-    # 00100
-    # 10001
-    # 01110
-    # 00000
-)
-print_and_wait("Create custom char ':-)'")
-
-# show custom char stored at location 0
-lcd.print(chr(0))
-lcd.print(chr(0))
-print_and_wait("Show custom char")
+# ============================================================================
+# DEMO CODE - Commented out to focus on knob reading
+# Uncomment if you want to see LCD demo features
+# ============================================================================
+# print("LCD is used with a charsize of {}".format(lcd.charsize))
+# print("Cursor position is {}".format(lcd.cursor_position))
+# lcd.print("Hello World")
+# print_and_wait("Show 'Hello World' on LCD")
+# ... (rest of demo code)
 
 
 # Initialize SPI and CS pin once (more efficient for continuous reading)
-spi = SPI(1, baudrate=1000000, polarity=0, phase=1)
-cs = Pin(10, Pin.OUT)
-cs.off()  # Start with CS low
+# AS5047P requires: CPOL=0, CPHA=1 (polarity=0, phase=1), MSB first
+spi = SPI(1, baudrate=2000000, polarity=0, phase=1, bits=8, firstbit=SPI.MSB)
+cs = Pin(10, Pin.OUT, value=1)  # CS high when idle
+
+# AS5047P register addresses
+AS5047P_ANGLECOM = 0x3FFF  # Angle register (read-only)
+AS5047P_ERRFL = 0x0001  # Error flag register
+
+
+def even_parity_15bits(value):
+    """Calculate even parity for bits 0-14 of a 16-bit value."""
+    # Count number of 1s in bits 0-14
+    count = bin(value & 0x7FFF).count("1")
+    return (count % 2) == 0
+
+
+def build_command(addr, is_read=True):
+    """Build a 16-bit command frame with proper parity for AS5047P.
+
+    Format:
+    - Bit 15: PARC (even parity over bits 14-0)
+    - Bit 14: R/W (1=Read, 0=Write)
+    - Bits 13-0: Register address
+    """
+    rw_bit = 1 if is_read else 0
+    cmd_low = (rw_bit << 14) | (addr & 0x3FFF)
+
+    # Calculate parity bit (bit 15)
+    parity_bit = 0 if even_parity_15bits(cmd_low) else 1
+
+    # Combine: parity bit (15) + command (14-0)
+    cmd = (parity_bit << 15) | cmd_low
+    return cmd
+
+
+def send_command_bytes(cmd):
+    """Convert 16-bit command to 2 bytes (MSB first)."""
+    return bytes([(cmd >> 8) & 0xFF, cmd & 0xFF])
+
 
 def read_knob():
-    """Read knob value via SPI."""
-    cs.off()  # Select device
-    spi.write(bytearray([0xFF, 0xFF]))
-    cs.on()   # Deselect
-    cs.off()  # Select again for read
-    result = spi.read(2)
-    cs.on()   # Deselect
-    return ubinascii.hexlify(result)
+    """Read angle from AS5047P with proper parity and error checking.
+
+    Returns: bytes object with hex-encoded angle value, or None on error.
+    """
+    try:
+        # Step 1: Send read command for angle register (0x3FFF)
+        cmd = build_command(AS5047P_ANGLECOM, is_read=True)
+        cmd_bytes = send_command_bytes(cmd)
+
+        cs.off()  # Select device
+        # Read dummy data while writing command (SPI requires simultaneous read/write)
+        dummy_read = bytearray(2)
+        try:
+            spi.write_readinto(cmd_bytes, dummy_read)  # Write command, read dummy
+        except AttributeError:
+            # Fallback if write_readinto not available
+            spi.write(cmd_bytes)
+            dummy_read = spi.read(2)  # Read dummy response
+        cs.on()  # Deselect
+
+        # Step 2: AS5047P returns data delayed by one command
+        # Send NOP (read from address 0x0000) to get the angle data
+        # We need to write and read simultaneously for SPI
+        nop_cmd = build_command(0x0000, is_read=True)
+        nop_bytes = send_command_bytes(nop_cmd)
+
+        cs.off()  # Select device
+        # Use write_readinto for simultaneous write/read (preferred)
+        # Fallback to read() with write parameter if not available
+        try:
+            response = bytearray(2)
+            spi.write_readinto(
+                nop_bytes, response
+            )  # Write NOP and read response simultaneously
+        except AttributeError:
+            # Fallback: some MicroPython ports use read() with write parameter
+            response = spi.read(2, write=nop_bytes)  # Write NOP while reading
+        cs.on()  # Deselect
+
+        if len(response) != 2:
+            print("Error: Invalid response length")
+            return None
+
+        # Parse response frame
+        data_word = (response[0] << 8) | response[1]
+
+        # Debug: print raw response for troubleshooting
+        # print(f"Raw response: {response[0]:02x} {response[1]:02x} = 0x{data_word:04x}")
+
+        # Extract fields from response:
+        # Bit 15: PARD (parity bit for response)
+        # Bit 14: EF (error flag)
+        # Bits 13-0: Data (14-bit angle)
+        pard = (data_word >> 15) & 1
+        ef = (data_word >> 14) & 1
+        angle_data = data_word & 0x3FFF
+
+        # Verify response parity
+        computed_parity = 0 if even_parity_15bits(data_word & 0x7FFF) else 1
+        if computed_parity != pard:
+            # Parity error - this is a real problem, log it
+            print(
+                f"AS5047P parity error in response! Expected {computed_parity}, got {pard}"
+            )
+            # Still return the data, but it may be corrupted
+
+        # Note: EF bit can give false positives, so we only check ERRFL if parity fails
+        # Ignore EF bit otherwise to reduce noise
+
+        # Return hex-encoded angle value
+        # Convert bytearray to bytes if needed
+        if isinstance(response, bytearray):
+            return ubinascii.hexlify(bytes(response))
+        else:
+            return ubinascii.hexlify(response)
+
+    except Exception as e:
+        print(f"Error reading knob: {e}")
+        import sys
+
+        sys.print_exception(e)
+        return None
 
 
 # ============================================================================
 # CONTINUOUS READING OPTIONS
 # ============================================================================
-
-# Option 1: Simple polling loop (blocks everything else)
-def continuous_read_simple():
-    """Simple continuous reading - blocks other operations."""
-    while True:
-        value = read_knob()
-        print(f"Knob value: {value}")
-        # Process value here
-        # sleep(0.01)  # Optional: small delay to prevent overwhelming
-
 
 # Option 2: Timer-based polling (allows other tasks to run)
 def continuous_read_timer():
@@ -252,62 +244,245 @@ async def continuous_read_async():
 def continuous_read_thread():
     """Continuous reading in a separate thread."""
     import _thread
-    
+
     def read_loop():
         while True:
             value = read_knob()
             print(f"Knob value: {value}")
             # Process value here
             sleep(0.01)
-    
+
     _thread.start_new_thread(read_loop, ())
 
 
-# Option 5: Practical example - Read knob and update LCD
+# Helper function to update LCD display with knob value
+def update_lcd_with_knob_value(lcd_instance, value):
+    """Update LCD display with knob value."""
+    if value is None:
+        lcd_instance.clear()
+        lcd_instance.set_cursor(0, 0)
+        lcd_instance.print("Read Error")
+        return False
+
+    try:
+        # Convert hex bytes to integer
+        raw_value = int(value, 16)
+
+        # AS5047P returns 14-bit angle in bits 13-0
+        # Extract the 14-bit angle value
+        angle_14bit = raw_value & 0x3FFF
+
+        # Calculate angle in degrees (0-360)
+        angle_degrees = (angle_14bit * 360.0) / 16384.0  # 2^14 = 16384
+
+        # Calculate percentage (0-100%)
+        percentage = (angle_14bit * 100) // 16384
+
+        # Update LCD - format nicely for 20x4 display
+        lcd_instance.clear()
+
+        # Row 0: Title
+        lcd_instance.set_cursor(0, 0)
+        lcd_instance.print("Knob Value:")
+
+        # Row 1: Angle in degrees
+        lcd_instance.set_cursor(0, 1)
+        lcd_instance.print(f"Angle: {angle_degrees:6.1f} deg")
+
+        # Row 2: Raw 14-bit value and percentage
+        lcd_instance.set_cursor(0, 2)
+        lcd_instance.print(f"Raw: {angle_14bit:5d} ({percentage:3d}%)")
+
+        # Row 3: Hex value
+        lcd_instance.set_cursor(0, 3)
+        hex_str = value.decode() if isinstance(value, bytes) else str(value)
+        lcd_instance.print(f"Hex: {hex_str}")
+
+        # Also print to console for debugging
+        print(
+            f"Angle: {angle_degrees:.1f}° ({angle_14bit}/16384, {percentage}%) - {hex_str}"
+        )
+        return True
+    except Exception as e:
+        print(f"Error processing knob value: {e}")
+        import sys
+
+        sys.print_exception(e)
+        # Show error on LCD
+        lcd_instance.clear()
+        lcd_instance.set_cursor(0, 0)
+        lcd_instance.print("Error processing")
+        lcd_instance.set_cursor(0, 1)
+        lcd_instance.print(str(e)[:20])
+        return False
+
+
+# Option 5: Read knob and update LCD (optimized - only updates when value changes)
 def continuous_read_with_lcd(lcd_instance):
-    """Read knob continuously and update LCD display."""
+    """Read knob continuously and update LCD display using timer."""
     from machine import Timer
-    
+
+    last_value = None
+    update_count = 0
+
     def update_display(timer):
-        value = read_knob()
-        # Convert hex to readable format (adjust based on your device)
+        nonlocal last_value, update_count
+        update_count += 1
+
         try:
-            # Example: convert hex bytes to integer
-            int_value = int(value, 16)
-            # Update LCD
+            value = read_knob()
+
+            # Skip if read failed (returned None)
+            if value is None:
+                return
+
+            # Always update on first read, then only if value changed
+            if last_value is None or value != last_value:
+                last_value = value
+                update_lcd_with_knob_value(lcd_instance, value)
+        except Exception as e:
+            print(f"Error in timer callback: {e}")
+            import sys
+
+            sys.print_exception(e)
+            # Show error on LCD
             lcd_instance.clear()
             lcd_instance.set_cursor(0, 0)
-            lcd_instance.print(f"Knob: {int_value}")
+            lcd_instance.print("Error reading knob")
             lcd_instance.set_cursor(0, 1)
-            lcd_instance.print(f"Hex: {value.decode()}")
-        except Exception as e:
-            print(f"Error: {e}")
-    
-    # Read and update every 50ms (20Hz - good for knob reading)
-    timer = Timer(-1)
-    timer.init(period=50, mode=Timer.PERIODIC, callback=update_display)
+            lcd_instance.print(str(e)[:20])
+
+    # Try to create a timer - different boards use different timer numbers
+    # Try virtual timer first, then hardware timers 0, 1, 2
+    timer = None
+    for timer_id in [-1, 0, 1, 2, 3]:
+        try:
+            timer = Timer(timer_id)
+            timer.init(period=50, mode=Timer.PERIODIC, callback=update_display)
+            print(f"Timer {timer_id} initialized successfully")
+            break
+        except (ValueError, OSError) as e:
+            print(f"Timer {timer_id} failed: {e}")
+            continue
+
+    if timer is None:
+        raise RuntimeError(
+            "Could not initialize any timer. Use continuous_read_with_lcd_loop() instead."
+        )
+
     return timer
 
 
+# Option 6: Loop-based continuous reading (fallback if timers don't work)
+def continuous_read_with_lcd_loop(lcd_instance):
+    """Read knob continuously using a loop (works on all boards)."""
+    from time import sleep_ms
+
+    last_value = None
+
+    print("Starting loop-based knob reading...")
+    while True:
+        try:
+            value = read_knob()
+
+            # Only update if value changed (prevents flickering)
+            if last_value is None or value != last_value:
+                last_value = value
+                update_lcd_with_knob_value(lcd_instance, value)
+
+            sleep_ms(50)  # Read every 50ms (20Hz)
+        except KeyboardInterrupt:
+            print("\nStopping knob reading...")
+            break
+        except Exception as e:
+            print(f"Error in loop: {e}")
+            import sys
+
+            sys.print_exception(e)
+            sleep_ms(100)  # Wait a bit before retrying
+
+
 # ============================================================================
-# USAGE EXAMPLES
+# START CONTINUOUS KNOB READING WITH LCD DISPLAY
 # ============================================================================
 
-# To start continuous reading, choose one:
+# Clear LCD and show startup message
+lcd.clear()
+lcd.set_cursor(0, 0)
+lcd.print("Knob Reader")
+lcd.set_cursor(0, 1)
+lcd.print("Initializing...")
+sleep(1)
 
-# Example 1: Simple blocking loop (uncomment to use)
-# continuous_read_simple()
+# Test read_knob() first to make sure it works
+print("Testing knob read...")
+try:
+    test_value = read_knob()
+    print(f"Test read successful: {test_value}")
+except Exception as e:
+    print(f"ERROR: Knob read failed: {e}")
+    import sys
 
-# Example 2: Timer-based (recommended - non-blocking)
-# timer = continuous_read_timer()
-# # Your other code can run here
-# # To stop: timer.deinit()
+    sys.print_exception(e)
+    lcd.clear()
+    lcd.set_cursor(0, 0)
+    lcd.print("Knob read failed!")
+    lcd.set_cursor(0, 1)
+    lcd.print(str(e)[:20])
+    # Don't start timer if read fails
+    raise
 
-# Example 3: With LCD updates
-# timer = continuous_read_with_lcd(lcd)
-# # Your other code can run here
-# # To stop: timer.deinit()
+# Start continuous reading with LCD updates
+print("Starting continuous knob reading...")
+try:
+    timer = continuous_read_with_lcd(lcd)
+    print("Timer started!")
+    use_timer = True
+except Exception as e:
+    print(f"Timer initialization failed: {e}")
+    print("Falling back to loop-based reading...")
+    use_timer = False
+    timer = None
 
-# Example 4: Asyncio (if you want to use async/await)
-# import uasyncio as asyncio
-# asyncio.run(continuous_read_async())
+# Do an immediate first read to populate the display
+print("Performing initial read...")
+try:
+    initial_value = read_knob()
+    if initial_value:
+        print(f"Initial read: {initial_value}")
+        update_lcd_with_knob_value(lcd, initial_value)
+        print("Initial display updated")
+    else:
+        print("Initial read returned None")
+        lcd.clear()
+        lcd.set_cursor(0, 0)
+        lcd.print("Read returned None")
+except Exception as e:
+    print(f"Error in initial read: {e}")
+    import sys
+
+    sys.print_exception(e)
+
+# Keep the script running
+# The timer callback will handle all updates
+# You can add other code here that will run alongside the knob reading
+print("Knob reading active! Press Ctrl+C to stop.")
+
+# Main loop - keep script alive
+try:
+    if use_timer:
+        # Timer-based: just keep script running
+        while True:
+            sleep(1)  # Just keep the script running
+            # You can add other periodic tasks here if needed
+    else:
+        # Loop-based: run the loop function
+        continuous_read_with_lcd_loop(lcd)
+except KeyboardInterrupt:
+    print("\nStopping knob reading...")
+    if timer is not None:
+        timer.deinit()
+    lcd.clear()
+    lcd.set_cursor(0, 0)
+    lcd.print("Stopped")
+    print("Done.")
