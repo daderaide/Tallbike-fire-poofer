@@ -80,3 +80,26 @@ If you still see import errors:
 - **Abstract hardware interactions**: Use wrapper classes that can be easily mocked
 - **Test business logic**: Focus tests on your application logic, not hardware specifics
 - **Hardware integration tests**: Run device-specific tests separately when needed
+
+## Poofer Control Hardware Info
+
+### Relay Box Specs
+
+- **ADC model**: ADS1015
+- **ADC I2C address**: `0x48` (address pin tied to ground)
+- **A0**: pressure sensor
+- **A1**: ignitor battery monitor (4.2V max)
+- **A2**: valve battery monitor (12.6V through voltage divider = 3.737V, 0.2966 ratio)
+
+- **Relay board model**: PCF8574A
+- **Relay board I2C address**: `0x3F`
+
+- **ESP32 board model**: ESP32-S3-DevKitC-1 v1.1
+- **SDA**: GPIO1
+- **SCL**: GPIO2
+
+### UART (MAX485)
+
+- **TX**: GPIO17 (UART1)
+- **RX**: GPIO18 (UART1)
+- **DE/RE**: GPIO8
