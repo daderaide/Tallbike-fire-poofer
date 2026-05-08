@@ -256,8 +256,14 @@ def continuous_read_thread():
 
 
 # Helper function to update LCD display with knob value
-def update_lcd_with_knob_value(lcd_instance, value):
-    """Update LCD display with knob value."""
+def update_lcd_with_knob_value(lcd_instance, value, cumulative_counter=None):
+    """Update LCD display with knob value.
+
+    Args:
+        lcd_instance: LCD object to update
+        value: Hex-encoded angle value
+        cumulative_counter: Optional integer counter (increments/decrements with rotation)
+    """
     if value is None:
         lcd_instance.clear()
         lcd_instance.set_cursor(0, 0)
@@ -285,23 +291,27 @@ def update_lcd_with_knob_value(lcd_instance, value):
         lcd_instance.set_cursor(0, 0)
         lcd_instance.print("Knob Value:")
 
-        # Row 1: Angle in degrees
-        lcd_instance.set_cursor(0, 1)
+        # Row 1: Cumulative counter (primary display)
+        if cumulative_counter is not None:
+            lcd_instance.set_cursor(0, 1)
+            lcd_instance.print(f"Count: {cumulative_counter:6d}")
+        else:
+            lcd_instance.set_cursor(0, 1)
+            lcd_instance.print(f"Angle: {angle_degrees:6.1f} deg")
+
+        # Row 2: Current angle in degrees
+        lcd_instance.set_cursor(0, 2)
         lcd_instance.print(f"Angle: {angle_degrees:6.1f} deg")
 
-        # Row 2: Raw 14-bit value and percentage
-        lcd_instance.set_cursor(0, 2)
+        # Row 3: Raw value
+        lcd_instance.set_cursor(0, 3)
         lcd_instance.print(f"Raw: {angle_14bit:5d} ({percentage:3d}%)")
 
-        # Row 3: Hex value
-        lcd_instance.set_cursor(0, 3)
-        hex_str = value.decode() if isinstance(value, bytes) else str(value)
-        lcd_instance.print(f"Hex: {hex_str}")
-
-        # Also print to console for debugging
-        print(
-            f"Angle: {angle_degrees:.1f}° ({angle_14bit}/16384, {percentage}%) - {hex_str}"
-        )
+        # Print to console only when display updates (reduces noise)
+        if cumulative_counter is not None:
+            print(f"Count: {cumulative_counter}, Angle: {angle_degrees:.1f}°")
+        else:
+            print(f"Angle: {angle_degrees:.1f}° ({angle_14bit}/16384, {percentage}%)")
         return True
     except Exception as e:
         print(f"Error processing knob value: {e}")
@@ -318,15 +328,51 @@ def update_lcd_with_knob_value(lcd_instance, value):
 
 
 # Option 5: Read knob and update LCD (optimized - only updates when value changes)
-def continuous_read_with_lcd(lcd_instance):
-    """Read knob continuously and update LCD display using timer."""
+def calculate_angle_direction(current_angle, last_angle):
+    """Calculate change and direction, handling wraparound at 0/360.
+
+    Returns:
+        tuple: (angle_change_in_degrees, direction)
+            - direction: +1 for forward, -1 for backward, 0 for no significant change
+    """
+    # Calculate raw difference
+    raw_diff = current_angle - last_angle
+
+    # Handle wraparound: if difference is > 180, we crossed 0/360 boundary
+    if raw_diff > 180:
+        # Went backwards (e.g., 350° to 10° means we went from 350 to 360, then to 10)
+        angle_diff = -(360 - raw_diff)
+        direction = -1
+    elif raw_diff < -180:
+        # Went forwards (e.g., 10° to 350° means we went from 10 to 0, then to 350)
+        angle_diff = 360 + raw_diff
+        direction = 1
+    else:
+        # Normal case, no wraparound
+        angle_diff = raw_diff
+        direction = 1 if raw_diff > 0 else (-1 if raw_diff < 0 else 0)
+
+    return abs(angle_diff), direction
+
+
+def continuous_read_with_lcd(lcd_instance, angle_threshold=1.0):
+    """Read knob continuously and update LCD display using timer.
+
+    Args:
+        lcd_instance: LCD object to update
+        angle_threshold: Minimum change in degrees before updating display (default: 1.0)
+    """
     from machine import Timer
 
     last_value = None
+    last_angle_degrees = None
+    cumulative_counter = 0  # Integer counter that increments/decrements
+    accumulated_angle = 0.0  # Track accumulated angle change for 30-degree increments
     update_count = 0
+    DEGREES_PER_COUNT = 30.0  # 1 count per 30 degrees
 
     def update_display(timer):
-        nonlocal last_value, update_count
+        nonlocal last_value, last_angle_degrees, cumulative_counter, accumulated_angle, update_count
         update_count += 1
 
         try:
@@ -336,21 +382,55 @@ def continuous_read_with_lcd(lcd_instance):
             if value is None:
                 return
 
-            # Always update on first read, then only if value changed
-            if last_value is None or value != last_value:
-                last_value = value
-                update_lcd_with_knob_value(lcd_instance, value)
-        except Exception as e:
-            print(f"Error in timer callback: {e}")
-            import sys
+            # Calculate current angle
+            try:
+                raw_value = int(value, 16)
+                angle_14bit = raw_value & 0x3FFF
+                angle_degrees = (angle_14bit * 360.0) / 16384.0
+            except Exception:
+                # If we can't parse, just update if raw value changed
+                if last_value is None or value != last_value:
+                    last_value = value
+                    update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
+                return
 
-            sys.print_exception(e)
-            # Show error on LCD
-            lcd_instance.clear()
-            lcd_instance.set_cursor(0, 0)
-            lcd_instance.print("Error reading knob")
-            lcd_instance.set_cursor(0, 1)
-            lcd_instance.print(str(e)[:20])
+            # Initialize on first read
+            if last_angle_degrees is None:
+                last_value = value
+                last_angle_degrees = angle_degrees
+                update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
+                return
+
+            # Calculate angle change and direction
+            angle_diff, direction = calculate_angle_direction(
+                angle_degrees, last_angle_degrees
+            )
+
+            # Only process if change exceeds threshold
+            if angle_diff >= angle_threshold:
+                # Accumulate angle change
+                accumulated_angle += direction * angle_diff
+
+                # Update counter: 1 count per 30 degrees
+                counts_to_add = int(abs(accumulated_angle) / DEGREES_PER_COUNT)
+                if counts_to_add > 0:
+                    cumulative_counter += direction * counts_to_add
+                    # Keep remainder for next update
+                    accumulated_angle = accumulated_angle - (
+                        direction * counts_to_add * DEGREES_PER_COUNT
+                    )
+
+                last_value = value
+                last_angle_degrees = angle_degrees
+                update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
+        except KeyboardInterrupt:
+            # Don't handle KeyboardInterrupt in timer callback - let it propagate
+            raise
+        except Exception as e:
+            # Only log errors occasionally to avoid flooding
+            if update_count % 100 == 0:  # Log every 100th error
+                print(f"Error in timer callback: {e}")
+            # Don't update LCD on every error to avoid flickering
 
     # Try to create a timer - different boards use different timer numbers
     # Try virtual timer first, then hardware timers 0, 1, 2
@@ -374,21 +454,73 @@ def continuous_read_with_lcd(lcd_instance):
 
 
 # Option 6: Loop-based continuous reading (fallback if timers don't work)
-def continuous_read_with_lcd_loop(lcd_instance):
-    """Read knob continuously using a loop (works on all boards)."""
+def continuous_read_with_lcd_loop(lcd_instance, angle_threshold=1.0):
+    """Read knob continuously using a loop (works on all boards).
+
+    Args:
+        lcd_instance: LCD object to update
+        angle_threshold: Minimum change in degrees before updating display (default: 1.0)
+    """
     from time import sleep_ms
 
     last_value = None
+    last_angle_degrees = None
+    cumulative_counter = 0  # Integer counter that increments/decrements
+    accumulated_angle = 0.0  # Track accumulated angle change for 30-degree increments
+    DEGREES_PER_COUNT = 30.0  # 1 count per 30 degrees
 
     print("Starting loop-based knob reading...")
     while True:
         try:
             value = read_knob()
 
-            # Only update if value changed (prevents flickering)
-            if last_value is None or value != last_value:
+            if value is None:
+                sleep_ms(50)
+                continue
+
+            # Calculate current angle
+            try:
+                raw_value = int(value, 16)
+                angle_14bit = raw_value & 0x3FFF
+                angle_degrees = (angle_14bit * 360.0) / 16384.0
+            except Exception:
+                # If we can't parse, just update if raw value changed
+                if last_value is None or value != last_value:
+                    last_value = value
+                    update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
+                sleep_ms(50)
+                continue
+
+            # Initialize on first read
+            if last_angle_degrees is None:
                 last_value = value
-                update_lcd_with_knob_value(lcd_instance, value)
+                last_angle_degrees = angle_degrees
+                update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
+                sleep_ms(50)
+                continue
+
+            # Calculate angle change and direction
+            angle_diff, direction = calculate_angle_direction(
+                angle_degrees, last_angle_degrees
+            )
+
+            # Only process if change exceeds threshold
+            if angle_diff >= angle_threshold:
+                # Accumulate angle change
+                accumulated_angle += direction * angle_diff
+
+                # Update counter: 1 count per 30 degrees
+                counts_to_add = int(abs(accumulated_angle) / DEGREES_PER_COUNT)
+                if counts_to_add > 0:
+                    cumulative_counter += direction * counts_to_add
+                    # Keep remainder for next update
+                    accumulated_angle = accumulated_angle - (
+                        direction * counts_to_add * DEGREES_PER_COUNT
+                    )
+
+                last_value = value
+                last_angle_degrees = angle_degrees
+                update_lcd_with_knob_value(lcd_instance, value, cumulative_counter)
 
             sleep_ms(50)  # Read every 50ms (20Hz)
         except KeyboardInterrupt:
@@ -433,9 +565,14 @@ except Exception as e:
     raise
 
 # Start continuous reading with LCD updates
+# Set threshold to 5.0 degrees to prevent flickering from small noise variations
+# Since meaningful changes are ~30 degrees, 5 degrees provides good filtering
+ANGLE_UPDATE_THRESHOLD = 5.0  # degrees - minimum change before updating display
+
 print("Starting continuous knob reading...")
+print(f"Display will update when angle changes by >= {ANGLE_UPDATE_THRESHOLD} degrees")
 try:
-    timer = continuous_read_with_lcd(lcd)
+    timer = continuous_read_with_lcd(lcd, angle_threshold=ANGLE_UPDATE_THRESHOLD)
     print("Timer started!")
     use_timer = True
 except Exception as e:
@@ -450,7 +587,7 @@ try:
     initial_value = read_knob()
     if initial_value:
         print(f"Initial read: {initial_value}")
-        update_lcd_with_knob_value(lcd, initial_value)
+        update_lcd_with_knob_value(lcd, initial_value, 0)  # Start counter at 0
         print("Initial display updated")
     else:
         print("Initial read returned None")
@@ -477,7 +614,7 @@ try:
             # You can add other periodic tasks here if needed
     else:
         # Loop-based: run the loop function
-        continuous_read_with_lcd_loop(lcd)
+        continuous_read_with_lcd_loop(lcd, angle_threshold=ANGLE_UPDATE_THRESHOLD)
 except KeyboardInterrupt:
     print("\nStopping knob reading...")
     if timer is not None:
