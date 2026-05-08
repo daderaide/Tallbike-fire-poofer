@@ -13,11 +13,11 @@ Relay Board I2C address: 0x3F
 
 ESP32 board model: ESP32-S3-DevKitC-1 v1.1  
 
-SDA: pin 1 - GPIO1  
-SCL: pin 2 - GPIO2  
+SDA: GPIO1  
+SCL: GPIO2  
 
 UART (MAX485):
 
-TX: pin 10 - GPIO17 (UART1)  
-RX: pin 11 -  GPIO18 (UART1)  
-DE/RE: pin 4 - GPIO4  
+TX: GPIO17 (UART1)  
+RX: GPIO18 (UART1)  
+DE/RE: GPIO8  
