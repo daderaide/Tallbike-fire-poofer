@@ -103,3 +103,30 @@ If you still see import errors:
 - **TX**: GPIO17 (UART1)
 - **RX**: GPIO18 (UART1)
 - **DE/RE**: GPIO8
+
+### Main Control Box Specs
+
+- **Display**: I2C LCD, address `0x27`
+  - **SDA**: GPIO1
+  - **SCL**: GPIO2
+
+- **UART1 (MAX485)**
+  - **TX**: GPIO17
+  - **RX**: GPIO18
+  - **DE/RE**: GPIO8
+
+- **Rotary Encoder**
+  - **CLK**: GPIO4
+  - **DT**: GPIO5
+  - **SW**: GPIO6 (internal pull-up)
+
+- **Main Poofer Button**
+  - **Button**: GPIO7 (internal pull-up)
+  - **NeoPixel ring (16 LEDs)**: GPIO15
+
+- **Aux Button**
+  - **Button**: GPIO21 (internal pull-up)
+  - **NeoPixel (1 LED)**: GPIO16
+
+- **Battery Monitor**
+  - **ADC**: GPIO9 (ADC1_CH8, through voltage divider, 4.2V max → 3.3V)
