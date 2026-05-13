@@ -85,6 +85,11 @@ If you still see import errors:
 
 ### Relay Box Specs
 
+- **Relay and Valve Numbering:**
+
+- **Relays 1-4**: Normally Closed Valves 1-4 (poof valves)
+- **Relays 5-8**: Normally Open Valves 1-4 (isolation valves)
+
 - **ADC model**: ADS1015
 - **ADC I2C address**: `0x48` (address pin tied to ground)
 - **A0**: pressure sensor
@@ -130,3 +135,4 @@ If you still see import errors:
 
 - **Battery Monitor**
   - **ADC**: GPIO9 (ADC1_CH8, through voltage divider, 4.2V max → 3.3V)
+
