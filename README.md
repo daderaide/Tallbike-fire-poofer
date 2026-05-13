@@ -83,12 +83,12 @@ If you still see import errors:
 
 ## Poofer Control Hardware Info
 
-### Relay Box Specs
-
-- **Relay and Valve Numbering:**
+### **Relay and Valve Numbering:**
 
 - **Relays 1-4**: Normally Closed Valves 1-4 (poof valves)
 - **Relays 5-8**: Normally Open Valves 1-4 (isolation valves)
+
+### Relay Box Specs
 
 - **ADC model**: ADS1015
 - **ADC I2C address**: `0x48` (address pin tied to ground)
