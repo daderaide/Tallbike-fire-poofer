@@ -1,4 +1,4 @@
-# High Stakes — Poofer Control System Architecture
+# The FUPA — Poofer Control System Architecture
 
 ## Overview
 
