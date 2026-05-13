@@ -1,4 +1,4 @@
-# The FUPA — Poofer Control System Architecture
+# High Stakes — Poofer Control System Architecture
 
 ## Overview
 
@@ -135,7 +135,17 @@ The architecture is designed to be modular so that features can be added increme
 - Each step can define: valve bitmask, igniter state, igniter timing offset, transition condition
 - Handles the aux button: runs the currently selected macro when pressed
 
-### 10. Menu System (`menu.py`)
+### 10. WiFi / OTA Manager (`wifi.py`)
+**Responsibility**: Manages WiFi connectivity and WebREPL for wireless code deployment.
+
+- **Not in MVP** — added when convenient, not critical path
+- WiFi station mode (connect to existing network) or AP mode (ESP32 creates its own network)
+- WebREPL server for wireless Python console and file upload to the control box
+- Control box can relay file updates to the relay box over RS-485, or relay box runs its own WebREPL over the same WiFi network
+- All WiFi features off by default — enabled from menu only when needed to conserve power
+- SSID, password, and mode stored in config
+
+### 11. Menu System (`menu.py`)
 **Responsibility**: UI navigation, screen rendering, and user input handling for settings.
 
 - **Not in MVP** — added after core functionality is solid
@@ -148,6 +158,7 @@ The architecture is designed to be modular so that features can be added increme
   - **Main poof options**: timing offsets for NC valves, NO valves, igniter; pressure lockout threshold
   - **LED settings**: pattern selection for main button
   - **Battery monitor**: detailed voltage/percentage for all 3 packs
+  - **WiFi / Update**: WiFi on/off, AP mode on/off, SSID, password, IP address (read-only), connection status (read-only), WebREPL on/off — enables wireless code deployment to both boards without plugging in
   - **Reset**: restore defaults with confirmation
 
 ---
