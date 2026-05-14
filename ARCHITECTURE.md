@@ -34,7 +34,7 @@ The architecture is designed to be modular so that features can be added increme
 
 ### Relay Box
 - **MCU**: ESP32-S3-DevKitC-1-N8R8 (MicroPython)
-- **Relay Board**: PCF8574A I2C 8-relay module at `0x3F` (active-low: 0 = relay ON, 1 = relay OFF)
+- **Relay Board**: PCF8574A I2C 8-relay module at `0x21` (active-low: 0 = relay ON, 1 = relay OFF)
   - Relays 1–4: NC poof valves (normally closed, energize to open)
   - Relays 5–8: NO isolation valves (normally open, energize to close)
   - Bit-to-relay mapping (active-low: 0 = ON, 1 = OFF):
