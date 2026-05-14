@@ -97,7 +97,7 @@ The architecture is designed to be modular so that features can be added increme
 **Responsibility**: Controls the NeoPixels on both buttons.
 
 - Main button ring (16 LEDs on GPIO15): patterns, colors, press/release feedback
-- Aux button LED (1 LED on GPIO14): color reflects current macro assignment
+- Aux button LED (1 LED on GPIO10): color reflects current macro assignment
 - Manages pre-programmed LED patterns (selectable in settings)
 - In MVP: simple on/off or static color
 - Later: animated patterns, context-dependent color changes
