@@ -33,7 +33,7 @@ The architecture is designed to be modular so that features can be added increme
 - **Relay Board**: PCF8574A I2C 8-relay module at `0x3F`
   - Relays 1–4: NC poof valves (normally closed, energize to open)
   - Relays 5–8: NO isolation valves (normally open, energize to close)
-- **Igniter Relay**: Single digital I/O relay (separate from 8-relay board)
+- **Igniter Relay**: Single digital I/O relay on GPIO38
 - **ADC**: ADS1015 at `0x48`
   - A0: Propane pressure sensor (0–500 PSI, 0.5–4.5V)
   - A1: Igniter battery monitor (1S, 4.2V max)
