@@ -50,7 +50,7 @@ The architecture is designed to be modular so that features can be added increme
 - **Comms**: UART1 → MAX485 RS-485 transceiver (manual DE/RE), 9600 baud
 - **I2C Pull-ups**: Relay board has 5.6kΩ, ADS1015 breakout has 10kΩ (~3.6kΩ effective parallel). No internal pull-ups needed.
 - **Pin Assignments**:
-  - I2C: SDA=GPIO1, SCL=GPIO2
+  - I2C: SDA=GPIO2, SCL=GPIO1
   - UART1: TX=GPIO17, RX=GPIO18
   - MAX485 DE/RE: GPIO8
   - Igniter relay: GPIO38
