@@ -43,10 +43,10 @@ The architecture is designed to be modular so that features can be added increme
 - **Igniter Relay**: Single digital I/O relay on GPIO38 (active high, initialize LOW to prevent startup firing)
 - **Pressure Sensor**: 5V supply, 3-wire (power/ground/signal), 0–500 PSI, 0.5–4.5V output (ratiometric)
 - **ADC**: ADS1015 at `0x48`, gain = 1 (±4.096V full scale)
-  - A0: Propane pressure sensor (0.5–4.5V)
-  - A1: Igniter battery monitor (1S, 4.2V max)
-  - A2: Valve battery monitor (3S, 12.6V through voltage divider, 0.2966 ratio)
-  - A3: Unused
+  - A3: Propane pressure sensor (0.5–4.5V)
+  - A2: Igniter battery monitor (1S, 4.2V max)
+  - A1: Valve battery monitor (3S, 12.6V through voltage divider, 0.2966 ratio)
+  - A0: Unused
 - **Comms**: UART1 → MAX485 RS-485 transceiver (manual DE/RE), 9600 baud
 - **I2C Pull-ups**: Relay board has 5.6kΩ, ADS1015 breakout has 10kΩ (~3.6kΩ effective parallel). No internal pull-ups needed.
 - **Pin Assignments**:
