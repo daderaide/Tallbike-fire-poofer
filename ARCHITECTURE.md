@@ -1,4 +1,5 @@
 # The FUPA — Poofer Control System Architecture
+### *Fire Up Poof Again*
 
 ## Overview
 
@@ -19,13 +20,13 @@ The architecture is designed to be modular so that features can be added increme
 - **Comms**: UART1 → MAX485 RS-485 transceiver (manual DE/RE)
 - **Battery**: 2× 18650 (parallel, 1S) with ADC voltage monitor
 - **Pin Assignments**:
-  - I2C: SDA=GPIO1, SCL=GPIO2
+  - I2C: SDA=GPIO13, SCL=GPIO14
   - UART1: TX=GPIO17, RX=GPIO18
   - MAX485 DE/RE: GPIO8
   - Encoder: CLK=GPIO4, DT=GPIO5, SW=GPIO6
   - Main button: GPIO7, NeoPixel=GPIO15
-  - Aux button: GPIO21, NeoPixel=GPIO16
-  - Battery ADC: GPIO9 (ADC1_CH8, through voltage divider)
+  - Aux button: GPIO11, NeoPixel=GPIO10
+  - Battery ADC: GPIO9 (ADC1_CH8, through voltage divider, 0.6726 ratio)
 
 ### Relay Box
 - **MCU**: ESP32-S3-DevKitC-1-N8R8 (MicroPython)
@@ -34,7 +35,7 @@ The architecture is designed to be modular so that features can be added increme
   - Relays 5–8: NO isolation valves (normally open, energize to close)
 - **Igniter Relay**: Single digital I/O relay (separate from 8-relay board)
 - **ADC**: ADS1015 at `0x48`
-  - A0: Propane pressure sensor (0–200 PSI, 0.5–4.5V)
+  - A0: Propane pressure sensor (0–500 PSI, 0.5–4.5V)
   - A1: Igniter battery monitor (1S, 4.2V max)
   - A2: Valve battery monitor (3S, 12.6V through voltage divider, 0.2966 ratio)
 - **Comms**: UART1 → MAX485 RS-485 transceiver (manual DE/RE)
@@ -96,7 +97,7 @@ The architecture is designed to be modular so that features can be added increme
 **Responsibility**: Controls the NeoPixels on both buttons.
 
 - Main button ring (16 LEDs on GPIO15): patterns, colors, press/release feedback
-- Aux button LED (1 LED on GPIO16): color reflects current macro assignment
+- Aux button LED (1 LED on GPIO14): color reflects current macro assignment
 - Manages pre-programmed LED patterns (selectable in settings)
 - In MVP: simple on/off or static color
 - Later: animated patterns, context-dependent color changes
@@ -272,4 +273,4 @@ The following features are planned but not part of MVP. The modular architecture
 7. Menu system (home screen, settings navigation)
 8. Macro engine + aux button (the fun stuff)
 9. Macro editor UI (create macros from the controller)
-10. Future sensors, servo, RFID, WiFi, etc.
+10. Future sensors, servo, WiFi, etc.
