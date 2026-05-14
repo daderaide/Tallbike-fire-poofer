@@ -27,7 +27,7 @@ The architecture is designed to be modular so that features can be added increme
   - I2C: SDA=GPIO13, SCL=GPIO14
   - UART1: TX=GPIO17, RX=GPIO18
   - MAX485 DE/RE: GPIO8
-  - Encoder: CLK=GPIO4, DT=GPIO5, SW=GPIO6 (SW: internal pull-up)
+  - Encoder: CLK=GPIO6, DT=GPIO5, SW=GPIO4 (SW: internal pull-up)
   - Main button: GPIO7 (internal pull-up), NeoPixel=GPIO15
   - Aux button: GPIO11 (internal pull-up), NeoPixel=GPIO10
   - Battery ADC: GPIO9 (ADC1_CH8, through voltage divider, 0.6726 ratio, 11dB attenuation)
