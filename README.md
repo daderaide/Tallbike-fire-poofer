@@ -81,3 +81,50 @@ If you still see import errors:
 - **Test business logic**: Focus tests on your application logic, not hardware specifics
 - **Hardware integration tests**: Run device-specific tests separately when needed
 
+## Installing to Boards
+
+### Prerequisites (one-time)
+
+Download the MicroPython firmware for ESP32-S3 from: https://micropython.org/download/ESP32_GENERIC_S3/
+
+This can be found at ESP32_GENERIC_S3-20260406-v1.28.0.bin in the repo.
+
+### Initial Setup (one-time per board)
+
+These steps only need to be done once when setting up a new ESP32-S3 board:
+
+1. **Erase the flash** (connect ESP32 via USB):
+   ```bash
+   esptool.py --chip esp32s3 --port /dev/ttyUSB0 erase_flash
+   ```
+
+2. **Flash MicroPython firmware**:
+   ```bash
+   esptool.py --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 \
+     write_flash -z 0x0 ESP32_GENERIC_S3-20260406-v1.28.0.bin
+   ```
+
+### Uploading Code (every time code changes)
+
+After making changes to the source code, upload the updated files:
+
+```bash
+ampy --port /dev/ttyUSB0 put main.py
+ampy --port /dev/ttyUSB0 put src/
+ampy --port /dev/ttyUSB0 put lib/
+```
+
+### Verifying (optional)
+
+Connect to the REPL to verify the code is running:
+```bash
+picocom /dev/ttyUSB0 -b 115200
+```
+
+Press Ctrl+D to soft-reboot and see the code execute.
+
+### Port Names
+
+- **macOS**: `/dev/cu.usbserial-*` or `/dev/cu.SLAB_USBtoUART`
+- **Linux**: `/dev/ttyUSB0` or `/dev/ttyACM0`
+- **Windows**: `COM3` or similar
