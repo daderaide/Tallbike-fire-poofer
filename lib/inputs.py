@@ -1,30 +1,43 @@
 # inputs.py — IRQ-driven input manager (control box only)
-# Encoder rotation via quadrature decoding on CLK/DT
+# Full quadrature state table for encoder rotation
 # Debounced click detection on encoder SW and aux button
 
 from machine import Pin
 import time
 
-# --- Encoder rotation (IRQ on CLK) ---
+# --- Encoder rotation (full quadrature, debounced direction) ---
 
 _enc_clk = Pin(6, Pin.IN)
 _enc_dt = Pin(5, Pin.IN)
 _enc_delta = 0
+_enc_last_state = (_enc_clk.value() << 1) | _enc_dt.value()
+_enc_last_dir = 0
+_enc_last_ms = 0
+_ENC_DIR_DEBOUNCE_MS = 20
+
+_QEM = {
+    (0,1): 1, (1,3): 1, (3,2): 1, (2,0): 1,
+    (0,2): -1, (2,3): -1, (3,1): -1, (1,0): -1,
+}
 
 def _enc_isr(pin):
-    global _enc_delta
-    if _enc_dt.value():
-        _enc_delta += 1
-    else:
-        _enc_delta -= 1
+    global _enc_delta, _enc_last_state, _enc_last_dir, _enc_last_ms
+    new_state = (_enc_clk.value() << 1) | _enc_dt.value()
+    key = (_enc_last_state, new_state)
+    if key in _QEM:
+        d = _QEM[key]
+        now = time.ticks_ms()
+        if d == _enc_last_dir:
+            _enc_delta += d
+        elif time.ticks_diff(now, _enc_last_ms) > _ENC_DIR_DEBOUNCE_MS:
+            _enc_last_dir = d
+            _enc_delta += d
+            _enc_last_ms = now
+        # else: direction reversal within debounce window, ignore
+    _enc_last_state = new_state
 
-_enc_clk.irq(trigger=Pin.IRQ_FALLING, handler=_enc_isr)
-
-def encoder_delta():
-    global _enc_delta
-    d = _enc_delta
-    _enc_delta = 0
-    return d
+_enc_clk.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_enc_isr)
+_enc_dt.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_enc_isr)
 
 # --- Debounce helpers ---
 

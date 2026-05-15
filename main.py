@@ -29,8 +29,11 @@ async def relay_main():
 async def control_main():
     from comms import host, SLAVE_ADDR
     from hardware import main_btn
-    from display import show_status, show_no_relay
+    from inputs import encoder_delta, encoder_clicked, aux_clicked
+    from menu import Menu
     import time
+
+    menu = Menu()
 
     connected = False
     last_status = None
@@ -65,6 +68,14 @@ async def control_main():
             update(delta)
             await asyncio.sleep_ms(30)
 
+    async def handle_menu():
+        while True:
+            d = encoder_delta()
+            click = encoder_clicked()
+            aux = aux_clicked()
+            menu.update(d, click, aux)
+            await asyncio.sleep_ms(20)
+
     async def comms_task():
         nonlocal connected, last_status
         arm_counter = 0
@@ -93,7 +104,7 @@ async def control_main():
                     connected = True
 
                 if status != last_status:
-                    show_status(
+                    menu.home.update_status(
                         state=status[0],
                         error=status[8],
                         pressure=status[2],
@@ -104,7 +115,10 @@ async def control_main():
                 if connected:
                     connected = False
                     last_status = None
-                    show_no_relay()
+                    menu.home.set_disconnected()
+
+                await asyncio.sleep_ms(500)
+                continue
 
             arm_counter += 1
             if arm_counter >= 10 and connected:
@@ -113,7 +127,7 @@ async def control_main():
 
             await asyncio.sleep_ms(10)
 
-    await asyncio.gather(handle_button(), comms_task(), handle_leds())
+    await asyncio.gather(handle_button(), comms_task(), handle_leds(), handle_menu())
 
 try:
     if ROLE == 'relay':
