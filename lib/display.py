@@ -38,11 +38,11 @@ def show_status(state, error=0, pressure=0, batt_v=0):
     if error > 0:
         lcd.print('{:<20}'.format('ERR: ' + ERROR_NAMES.get(error, '???')))
     else:
-        lcd.print('{:<20}'.format('HIGH STAKES'))
+        lcd.print('{:<20}'.format('THE FUPA'))
 
 def show_no_relay():
     lcd.set_cursor(0, 0)
-    lcd.print('{:<20}'.format('HIGH STAKES'))
+    lcd.print('{:<20}'.format('THE FUPA'))
     lcd.set_cursor(0, 1)
     lcd.print('{:<20}'.format('No relay box'))
     lcd.set_cursor(0, 2)
