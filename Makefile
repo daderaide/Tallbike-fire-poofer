@@ -12,6 +12,6 @@ clean:
 upload:
 	find lib/ -name '.DS_Store' -delete
 	mpremote connect /dev/tty.usbserial-110 cp -r lib/ :
-	mpremote connect /dev/tty.usbserial-10 cp -r lib/ :
 	mpremote connect /dev/tty.usbserial-110 cp main.py :main.py
+	mpremote connect /dev/tty.usbserial-10 cp -r lib/ :
 	mpremote connect /dev/tty.usbserial-10 cp main.py :main.py

@@ -26,48 +26,82 @@ def encoder_delta():
     _enc_delta = 0
     return d
 
-# --- Encoder button (IRQ on SW, debounced) ---
+# --- Debounce helpers ---
+
+_DEBOUNCE_MS = 50
+
+# --- Encoder button (IRQ on SW, both edges) ---
 
 _enc_sw = Pin(4, Pin.IN, Pin.PULL_UP)
-_enc_clicked = False
+_enc_sw_state = 1
 _enc_sw_last_ms = 0
-_DEBOUNCE_MS = 150
+_enc_pressed = False
+_enc_released = False
 
 def _enc_sw_isr(pin):
-    global _enc_clicked, _enc_sw_last_ms
-    if pin.value() == 0:
-        now = time.ticks_ms()
-        if time.ticks_diff(now, _enc_sw_last_ms) > _DEBOUNCE_MS:
-            _enc_clicked = True
-            _enc_sw_last_ms = now
+    global _enc_sw_state, _enc_sw_last_ms, _enc_pressed, _enc_released
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _enc_sw_last_ms) < _DEBOUNCE_MS:
+        return
+    val = pin.value()
+    if val != _enc_sw_state:
+        _enc_sw_state = val
+        _enc_sw_last_ms = now
+        if val == 0:
+            _enc_pressed = True
+        else:
+            _enc_released = True
 
-_enc_sw.irq(trigger=Pin.IRQ_FALLING, handler=_enc_sw_isr)
+_enc_sw.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_enc_sw_isr)
 
 def encoder_clicked():
-    global _enc_clicked
-    if _enc_clicked:
-        _enc_clicked = False
+    global _enc_pressed
+    if _enc_pressed:
+        _enc_pressed = False
         return True
     return False
 
-# --- Aux button (IRQ, debounced) ---
+def encoder_released():
+    global _enc_released
+    if _enc_released:
+        _enc_released = False
+        return True
+    return False
+
+# --- Aux button (IRQ, both edges) ---
 
 _aux_btn = Pin(11, Pin.IN, Pin.PULL_UP)
-_aux_clicked = False
+_aux_state = 1
 _aux_last_ms = 0
+_aux_pressed = False
+_aux_released = False
 
 def _aux_isr(pin):
-    global _aux_clicked, _aux_last_ms
+    global _aux_state, _aux_last_ms, _aux_pressed, _aux_released
     now = time.ticks_ms()
-    if time.ticks_diff(now, _aux_last_ms) > _DEBOUNCE_MS:
-        _aux_clicked = True
+    if time.ticks_diff(now, _aux_last_ms) < _DEBOUNCE_MS:
+        return
+    val = pin.value()
+    if val != _aux_state:
+        _aux_state = val
         _aux_last_ms = now
+        if val == 0:
+            _aux_pressed = True
+        else:
+            _aux_released = True
 
-_aux_btn.irq(trigger=Pin.IRQ_FALLING, handler=_aux_isr)
+_aux_btn.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_aux_isr)
 
 def aux_clicked():
-    global _aux_clicked
-    if _aux_clicked:
-        _aux_clicked = False
+    global _aux_pressed
+    if _aux_pressed:
+        _aux_pressed = False
+        return True
+    return False
+
+def aux_released():
+    global _aux_released
+    if _aux_released:
+        _aux_released = False
         return True
     return False
