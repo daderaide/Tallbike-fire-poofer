@@ -1,0 +1,16 @@
+{
+    "name": "Main Poof",
+    "steps": [
+        {
+            "trigger": "press",
+            "pressure": 0,
+            "delay_after": 0,
+            "valves": [
+                {"valve": 1, "duration": "held", "ign_dur": 100, "ign_offset": -20},
+                {"valve": 2, "duration": "held", "ign_dur": 100, "ign_offset": -20},
+                {"valve": 3, "duration": "held", "ign_dur": 100, "ign_offset": -20},
+                {"valve": 4, "duration": "held", "ign_dur": 100, "ign_offset": -20}
+            ]
+        }
+    ]
+}

@@ -39,6 +39,12 @@ def _enc_isr(pin):
 _enc_clk.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_enc_isr)
 _enc_dt.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=_enc_isr)
 
+def encoder_delta():
+    global _enc_delta
+    d = _enc_delta
+    _enc_delta = 0
+    return d
+
 # --- Debounce helpers ---
 
 _DEBOUNCE_MS = 50
