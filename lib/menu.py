@@ -255,7 +255,7 @@ class MacroListScreen(Screen):
         self._refresh()
 
     def _refresh(self):
-        from macros import list_macros
+        from macro_store import list_macros
         self._macros = list_macros()
         self.mark_dirty()
 
@@ -270,17 +270,14 @@ class MacroListScreen(Screen):
             return self._create_new()
         name = self._macros[index - 1]
         if name == 'main_poof':
-            from macros import load
+            from macro_store import load
             macro = load(name)
             return MacroEditScreen(name, macro, self)
         else:
             return AssignScreen(name, self.home, self)
 
-
-# --- Create new macro with auto-incremented name ---
-
     def _create_new(self):
-        from macros import save, load
+        from macro_store import save, load
         num = 1
         while 'Macro {}'.format(num) in [self._name_for(m) for m in self._macros]:
             num += 1
@@ -303,7 +300,7 @@ class MacroListScreen(Screen):
 
     def _name_for(self, filename):
         try:
-            from macros import load
+            from macro_store import load
             m = load(filename)
             return m.get('name', filename)
         except:
@@ -323,7 +320,7 @@ class AssignScreen(Screen):
 
     def _get_display_name(self):
         try:
-            from macros import load
+            from macro_store import load
             m = load(self.macro_name)
             return m.get('name', self.macro_name)
         except:
@@ -339,16 +336,22 @@ class AssignScreen(Screen):
 
     def on_scroll(self, delta):
         old = self.cursor
-        if delta > 0 and self.cursor < 3:
-            self.cursor = 3
-        elif delta < 0 and self.cursor > 2:
-            self.cursor = 2
+        if delta > 0:
+            if self.cursor == 0:
+                self.cursor = 2
+            elif self.cursor < 3:
+                self.cursor = 3
+        elif delta < 0:
+            if self.cursor == 3:
+                self.cursor = 2
+            elif self.cursor == 2:
+                self.cursor = 0
         if self.cursor != old:
             self.mark_dirty()
 
     def on_click(self, index):
         if index == 0:
-            from macros import load
+            from macro_store import load
             macro = load(self.macro_name)
             return MacroEditScreen(self.macro_name, macro, self.macro_list)
         if index == 2:  # Yes
@@ -378,6 +381,8 @@ class MacroEditScreen(Screen):
             n_valves = len(step.get('valves', []))
             rows.append('Step {} ({}, {}v)'.format(i + 1, trigger, n_valves))
         rows.append('Add Step')
+        if self.filename != 'main_poof':
+            rows.append('Delete Macro')
         rows.append('Save & Back')
         return rows
 
@@ -412,8 +417,12 @@ class MacroEditScreen(Screen):
             })
             self.mark_dirty()
             return StepEditScreen(self.macro, len(self.macro['steps']) - 1)
-        if index == 3 + step_count:  # Save & Back
-            from macros import save
+
+        items = self.items()
+        if items[index] == 'Delete Macro':
+            return DeleteConfirmScreen(self.filename, self.macro_list)
+        if items[index] == 'Save & Back':
+            from macro_store import save
             save(self.filename, self.macro)
             if self.macro_list:
                 self.macro_list._refresh()
@@ -427,6 +436,44 @@ class MacroEditScreen(Screen):
     def _set_color(self, color):
         self.macro['color'] = list(color)
         self.mark_dirty()
+
+
+# --- Delete Confirm Screen ---
+
+class DeleteConfirmScreen(Screen):
+    def __init__(self, filename, macro_list):
+        super().__init__()
+        self.filename = filename
+        self.macro_list = macro_list
+        self.cursor = 3
+
+    def items(self):
+        return [
+            'Delete macro?',
+            'Cannot be undone!',
+            'Yes, delete',
+            'No, keep it'
+        ]
+
+    def on_scroll(self, delta):
+        old = self.cursor
+        if delta > 0 and self.cursor < 3:
+            self.cursor = 3
+        elif delta < 0 and self.cursor > 2:
+            self.cursor = 2
+        if self.cursor != old:
+            self.mark_dirty()
+
+    def on_click(self, index):
+        if index == 2:  # Yes
+            from macro_store import delete
+            delete(self.filename)
+            if self.macro_list:
+                self.macro_list._refresh()
+            return 'home'
+        if index == 3:  # No
+            return 'pop'
+        return None
 
 
 # --- Color Picker Screen ---
@@ -533,7 +580,7 @@ class ValveSelectScreen(Screen):
         if index < len(self._available):
             valve_num = self._available[index]
             if valve_num <= 4:
-                new_valve = {'valve': valve_num, 'duration': 200, 'ign_dur': 100, 'ign_offset': -20}
+                new_valve = {'valve': valve_num, 'duration': 'held', 'ign_dur': 'held', 'ign_offset': 0}
             else:
                 new_valve = {'valve': valve_num, 'duration': 500}
             self.step_data.setdefault('valves', []).append(new_valve)
@@ -566,7 +613,9 @@ class ValveEditScreen(Screen):
             'Duration: {}'.format(dur_str),
         ]
         if v['valve'] <= 4:
-            rows.append('Ign dur: {}ms'.format(v.get('ign_dur', 100)))
+            ign_dur = v.get('ign_dur', 100)
+            ign_dur_str = 'held' if ign_dur == 'held' else '{}ms'.format(ign_dur)
+            rows.append('Ign dur: {}'.format(ign_dur_str))
             rows.append('Ign offset: {}ms'.format(v.get('ign_offset', -20)))
         rows.append('Remove Valve')
         rows.append('Done')
@@ -583,9 +632,12 @@ class ValveEditScreen(Screen):
                 cur, on_save=lambda i: self._set_dur_mode(i))
         if v['valve'] <= 4:
             if index == 2:  # Ign dur
-                return ValueEditScreen('Igniter Duration',
-                    v.get('ign_dur', 100), 10, 1000, 10, 'ms',
-                    on_save=lambda val: self._set('ign_dur', val))
+                if v.get('ign_dur') == 'held':
+                    cur = 0
+                else:
+                    cur = 1
+                return ChoiceScreen('Igniter Duration', ['While held', 'Timed'],
+                    cur, on_save=lambda i: self._set_ign_dur_mode(i))
             if index == 3:  # Ign offset
                 return ValueEditScreen('Igniter Offset',
                     v.get('ign_offset', -20), -500, 500, 5, 'ms',
@@ -605,6 +657,14 @@ class ValveEditScreen(Screen):
         else:
             if self.valve.get('duration') == 'held':
                 self.valve['duration'] = 200
+        self.mark_dirty()
+
+    def _set_ign_dur_mode(self, choice):
+        if choice == 0:
+            self.valve['ign_dur'] = 'held'
+        else:
+            if self.valve.get('ign_dur') == 'held':
+                self.valve['ign_dur'] = 100
         self.mark_dirty()
 
     def _set(self, key, value):
