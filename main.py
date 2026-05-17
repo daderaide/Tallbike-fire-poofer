@@ -38,6 +38,7 @@ async def control_main():
     connected = False
     last_status = None
     firing = False
+    aux_macro_idx = 0  # 0 = none assigned
 
     cmd_queue = []
 
@@ -59,21 +60,66 @@ async def control_main():
             await asyncio.sleep_ms(10)
 
     async def handle_leds():
-        from leds import update
+        from leds import update, set_color, set_off
         last = time.ticks_ms()
+        was_home = False
         while True:
             now = time.ticks_ms()
             delta = time.ticks_diff(now, last)
             last = now
+
+            on_home = menu.active is menu.home
+            if on_home and not was_home:
+                # Returned to home screen — show macro color
+                color = menu.home.aux_macro_color
+                if color:
+                    set_color(color[0], color[1], color[2])
+                else:
+                    set_off()
+            elif not on_home and was_home:
+                # Entered menus — LED off
+                set_off()
+            was_home = on_home
+
             update(delta)
             await asyncio.sleep_ms(30)
 
     async def handle_menu():
+        nonlocal aux_macro_idx
         while True:
             d = encoder_delta()
             click = encoder_clicked()
             aux = aux_clicked()
-            menu.update(d, click, aux)
+
+            on_home = menu.active is menu.home
+
+            if aux and on_home and aux_macro_idx > 0 and connected:
+                # Fire aux macro
+                queue_cmd(0, 102, aux_macro_idx)
+            elif aux and on_home:
+                # No macro assigned or not connected, ignore aux
+                pass
+            else:
+                # Normal menu update (aux = back in menus)
+                menu.update(d, click, aux)
+                # Check if a macro was just assigned
+                if menu.home.aux_macro_name != '(none)':
+                    # Look up macro index
+                    from macro_store import list_macros
+                    names = sorted([n for n in list_macros() if n != 'main_poof'])
+                    for i, name in enumerate(names):
+                        from macro_store import load
+                        m = load(name)
+                        if m.get('name') == menu.home.aux_macro_name:
+                            aux_macro_idx = i + 1  # 1-indexed
+                            break
+                else:
+                    aux_macro_idx = 0
+                continue
+
+            # Still need to handle encoder even when aux fired macro
+            menu.update(d, click, False)
+
             await asyncio.sleep_ms(20)
 
     async def comms_task():

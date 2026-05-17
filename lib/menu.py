@@ -75,7 +75,6 @@ class Screen:
 
 
 # --- Value Edit Screen ---
-# Scroll to change a value, click to confirm
 
 class ValueEditScreen(Screen):
     def __init__(self, label, value, min_val, max_val, step, suffix='', on_save=None):
@@ -112,7 +111,6 @@ class ValueEditScreen(Screen):
 
 
 # --- Choice Screen ---
-# Scroll through options, click to select
 
 class ChoiceScreen(Screen):
     def __init__(self, label, options, current, on_save=None):
@@ -189,10 +187,10 @@ class NameEditScreen(Screen):
         if self._editing:
             self._editing = False
             self.mark_dirty()
-            return False  # don't pop
+            return False
         if self.on_save:
             self.on_save(''.join(self._chars).strip())
-        return True  # pop
+        return True
 
 
 # --- Home Screen ---
@@ -206,6 +204,7 @@ class HomeScreen(Screen):
         self.batt_v = 0
         self.connected = False
         self.aux_macro_name = '(none)'
+        self.aux_macro_color = None
 
     def items(self):
         from display import STATE_NAMES, ERROR_NAMES
@@ -277,7 +276,7 @@ class MacroListScreen(Screen):
             return AssignScreen(name, self.home, self)
 
     def _create_new(self):
-        from macro_store import save, load
+        from macro_store import save
         num = 1
         while 'Macro {}'.format(num) in [self._name_for(m) for m in self._macros]:
             num += 1
@@ -290,6 +289,8 @@ class MacroListScreen(Screen):
                     'trigger': 'press',
                     'pressure': 0,
                     'delay_after': 0,
+                    'ign_dur': 'held',
+                    'ign_offset': 0,
                     'valves': []
                 }
             ]
@@ -356,6 +357,12 @@ class AssignScreen(Screen):
             return MacroEditScreen(self.macro_name, macro, self.macro_list)
         if index == 2:  # Yes
             self.home.aux_macro_name = self._display_name
+            try:
+                from macro_store import load
+                m = load(self.macro_name)
+                self.home.aux_macro_color = m.get('color', None)
+            except:
+                self.home.aux_macro_color = None
             return 'home'
         if index == 3:  # No
             return 'pop'
@@ -413,6 +420,8 @@ class MacroEditScreen(Screen):
                 'trigger': 'immediate',
                 'pressure': 0,
                 'delay_after': 0,
+                'ign_dur': 'held',
+                'ign_offset': 0,
                 'valves': []
             })
             self.mark_dirty()
@@ -511,10 +520,15 @@ class StepEditScreen(Screen):
     def items(self):
         s = self.step
         trigger = s.get('trigger', 'press')
+        ign_dur = s.get('ign_dur', 'held')
+        ign_dur_str = 'held' if ign_dur == 'held' else '{}ms'.format(ign_dur)
+
         rows = [
             'Trigger: {}'.format(trigger),
             'Pressure: {}psi'.format(s.get('pressure', 0)),
             'Delay after: {}ms'.format(s.get('delay_after', 0)),
+            'Ign dur: {}'.format(ign_dur_str),
+            'Ign offset: {}ms'.format(s.get('ign_offset', 0)),
         ]
         for v in s.get('valves', []):
             vtype = 'NC' if v['valve'] <= 4 else 'NO'
@@ -541,14 +555,26 @@ class StepEditScreen(Screen):
             return ValueEditScreen('Delay After', s.get('delay_after', 0),
                 0, 5000, 50, 'ms',
                 on_save=lambda v: self._set('delay_after', v))
+        if index == 3:  # Ign dur
+            if s.get('ign_dur') == 'held':
+                cur = 0
+            else:
+                cur = 1
+            return ChoiceScreen('Igniter Duration', ['While held', 'Timed'],
+                cur, on_save=lambda i: self._set_ign_dur_mode(i))
+        if index == 4:  # Ign offset
+            return ValueEditScreen('Igniter Offset', s.get('ign_offset', 0),
+                -500, 500, 5, 'ms',
+                on_save=lambda v: self._set('ign_offset', v))
 
+        valve_start = 5
         valve_count = len(s.get('valves', []))
-        if 3 <= index < 3 + valve_count:
-            valve_idx = index - 3
+        if valve_start <= index < valve_start + valve_count:
+            valve_idx = index - valve_start
             return ValveEditScreen(s, valve_idx)
-        if index == 3 + valve_count:  # Add Valve
+        if index == valve_start + valve_count:  # Add Valve
             return ValveSelectScreen(s)
-        if index == 4 + valve_count:  # Done
+        if index == valve_start + valve_count + 1:  # Done
             return 'pop'
         return None
 
@@ -556,8 +582,16 @@ class StepEditScreen(Screen):
         self.step[key] = value
         self.mark_dirty()
 
+    def _set_ign_dur_mode(self, choice):
+        if choice == 0:
+            self.step['ign_dur'] = 'held'
+        else:
+            if self.step.get('ign_dur') == 'held':
+                self.step['ign_dur'] = 100
+        self.mark_dirty()
 
-# --- Valve Select Screen (pick which valve to add) ---
+
+# --- Valve Select Screen ---
 
 class ValveSelectScreen(Screen):
     def __init__(self, step):
@@ -579,14 +613,11 @@ class ValveSelectScreen(Screen):
     def on_click(self, index):
         if index < len(self._available):
             valve_num = self._available[index]
-            if valve_num <= 4:
-                new_valve = {'valve': valve_num, 'duration': 'held', 'ign_dur': 'held', 'ign_offset': 0}
-            else:
-                new_valve = {'valve': valve_num, 'duration': 500}
+            new_valve = {'valve': valve_num, 'duration': 'held'}
             self.step_data.setdefault('valves', []).append(new_valve)
             self._available.remove(valve_num)
             self.mark_dirty()
-            return None  # stay on screen to add more
+            return None
         return 'pop'
 
 
@@ -611,14 +642,9 @@ class ValveEditScreen(Screen):
         rows = [
             'Valve {} ({})'.format(v['valve'], vtype),
             'Duration: {}'.format(dur_str),
+            'Remove Valve',
+            'Done'
         ]
-        if v['valve'] <= 4:
-            ign_dur = v.get('ign_dur', 100)
-            ign_dur_str = 'held' if ign_dur == 'held' else '{}ms'.format(ign_dur)
-            rows.append('Ign dur: {}'.format(ign_dur_str))
-            rows.append('Ign offset: {}ms'.format(v.get('ign_offset', -20)))
-        rows.append('Remove Valve')
-        rows.append('Done')
         return rows
 
     def on_click(self, index):
@@ -630,24 +656,10 @@ class ValveEditScreen(Screen):
                 cur = 1
             return ChoiceScreen('Valve Duration', ['While held', 'Timed'],
                 cur, on_save=lambda i: self._set_dur_mode(i))
-        if v['valve'] <= 4:
-            if index == 2:  # Ign dur
-                if v.get('ign_dur') == 'held':
-                    cur = 0
-                else:
-                    cur = 1
-                return ChoiceScreen('Igniter Duration', ['While held', 'Timed'],
-                    cur, on_save=lambda i: self._set_ign_dur_mode(i))
-            if index == 3:  # Ign offset
-                return ValueEditScreen('Igniter Offset',
-                    v.get('ign_offset', -20), -500, 500, 5, 'ms',
-                    on_save=lambda val: self._set('ign_offset', val))
-
-        items = self.items()
-        if items[index] == 'Remove Valve':
+        if index == 2:  # Remove
             self.step_data['valves'].pop(self.valve_idx)
             return 'pop'
-        if items[index] == 'Done':
+        if index == 3:  # Done
             return 'pop'
         return None
 
@@ -657,18 +669,6 @@ class ValveEditScreen(Screen):
         else:
             if self.valve.get('duration') == 'held':
                 self.valve['duration'] = 200
-        self.mark_dirty()
-
-    def _set_ign_dur_mode(self, choice):
-        if choice == 0:
-            self.valve['ign_dur'] = 'held'
-        else:
-            if self.valve.get('ign_dur') == 'held':
-                self.valve['ign_dur'] = 100
-        self.mark_dirty()
-
-    def _set(self, key, value):
-        self.valve[key] = value
         self.mark_dirty()
 
 

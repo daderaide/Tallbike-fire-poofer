@@ -7,14 +7,17 @@ import random
 NUM_LEDS = 16
 vals = [0.0] * NUM_LEDS
 hues = [0.0] * NUM_LEDS
-_start_ms = time.ticks_ms()
+
+# Mode: 'sparkle', 'solid', 'off'
+_mode = 'sparkle'
+_solid_r = 0
+_solid_g = 0
+_solid_b = 0
 
 def _time(interval):
-    # Sawtooth wave 0-1, period = interval * 65.536 seconds
     return (time.ticks_ms() / (interval * 65536)) % 1.0
 
 def _triangle(x):
-    # Triangle wave 0-1
     x = x % 1.0
     return 2.0 * x if x < 0.5 else 2.0 * (1.0 - x)
 
@@ -40,7 +43,35 @@ def _hsv_to_rgb(h, s, v):
         r, g, b = v, p, q
     return int(r * 255), int(g * 255), int(b * 255)
 
+def set_color(r, g, b):
+    global _mode, _solid_r, _solid_g, _solid_b
+    _mode = 'solid'
+    _solid_r = r
+    _solid_g = g
+    _solid_b = b
+
+def set_off():
+    global _mode
+    _mode = 'off'
+
+def set_sparkle():
+    global _mode
+    _mode = 'sparkle'
+
 def update(delta_ms):
+    if _mode == 'off':
+        for i in range(NUM_LEDS):
+            main_ring[i] = (0, 0, 0)
+        main_ring.write()
+        return
+
+    if _mode == 'solid':
+        for i in range(NUM_LEDS):
+            main_ring[i] = (_solid_r, _solid_g, _solid_b)
+        main_ring.write()
+        return
+
+    # Sparkle mode (default)
     for i in range(NUM_LEDS):
         vals[i] -= 0.005 * delta_ms * 0.1
         if vals[i] <= 0:

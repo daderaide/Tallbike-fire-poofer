@@ -1,6 +1,7 @@
-# safety.py — Safety manager and relay control (relay box only)
+# poof.py — Safety manager and relay control (relay box only)
 
 import time
+import json
 from hardware import i2c, igniter
 from comms import modbus
 
@@ -16,6 +17,12 @@ relay_bitmask = ALL_OFF
 last_comms_time = time.ticks_ms()
 COMMS_TIMEOUT_MS = 500
 
+# Executor (lazy init)
+_executor = None
+
+# Macro storage
+_macros = {}
+
 def update_comms_time():
     global last_comms_time
     last_comms_time = time.ticks_ms()
@@ -23,8 +30,8 @@ def update_comms_time():
 def check_watchdog():
     if time.ticks_diff(time.ticks_ms(), last_comms_time) > COMMS_TIMEOUT_MS:
         emergency_stop()
-        modbus.set_hreg(0, 3)   # system_state = error
-        modbus.set_hreg(8, 1)   # error_code = comms_timeout
+        modbus.set_hreg(0, 3)
+        modbus.set_hreg(8, 1)
 
 def set_relays(bitmask):
     global relay_bitmask
@@ -37,38 +44,148 @@ def set_igniter(state):
     modbus.set_hreg(3, state)
 
 def emergency_stop():
-    global armed
+    global armed, _executor
     armed = False
     set_relays(ALL_OFF)
     set_igniter(0)
-    modbus.set_hreg(0, 0)   # system_state = idle
-    modbus.set_hreg(9, 0)   # active_macro = none
+    if _executor is not None:
+        _executor.state = 0
+        _executor._ign_active = False
+        _executor._valve_timers = []
+        _executor.macro = None
+    modbus.set_hreg(0, 0)
+    modbus.set_hreg(9, 0)
+
+def load_macros():
+    global _macros
+    import os
+    _macros = {}
+    try:
+        files = os.listdir('/macros')
+        for f in files:
+            if f.endswith('.json'):
+                name = f[:-5]
+                try:
+                    with open('/macros/' + f, 'r') as fp:
+                        _macros[name] = json.load(fp)
+                except:
+                    pass
+    except:
+        pass
+
+def get_macro(name):
+    return _macros.get(name)
 
 def process_commands():
-    global armed
+    global armed, _executor
+
+    if _executor is None:
+        from executor import Executor
+        _executor = Executor(set_relays, set_igniter)
+        load_macros()
 
     changed = modbus.changed_hregs
 
+    # Arm/disarm
     if 100 in changed:
         val = modbus.get_hreg(100)
         if val == 1:
             armed = True
-            modbus.set_hreg(0, 1)   # system_state = armed
-            modbus.set_hreg(8, 0)   # clear error
+            modbus.set_hreg(0, 1)
+            modbus.set_hreg(8, 0)
         else:
             armed = False
             emergency_stop()
         modbus._remove_changed_register('HREGS', 100, changed[100]['time'])
 
+    # Fire register (button state: 1=pressed, 0=released)
     if 101 in changed:
         val = modbus.get_hreg(101)
-        if val == 1 and armed:
-            set_igniter(1)
-            set_relays(0x00)        # all 8 relays on (active low)
-            modbus.set_hreg(0, 2)   # system_state = firing
-        elif val == 0:
+        btn_pressed = val == 1
+
+        _executor.set_button_state(btn_pressed)
+
+        if btn_pressed and armed and not _executor.running:
+            macro = get_macro('main_poof')
+            if macro:
+                _executor.start(macro)
+        elif not btn_pressed and not _executor.running:
             set_relays(ALL_OFF)
             set_igniter(0)
             if armed:
-                modbus.set_hreg(0, 1)   # back to armed
+                modbus.set_hreg(0, 1)
+
         modbus._remove_changed_register('HREGS', 101, changed[101]['time'])
+
+    # Run macro by index (aux button macros)
+    if 102 in changed:
+        val = modbus.get_hreg(102)
+        if val == 0:
+            if _executor.running:
+                _executor.stop()
+        elif armed:
+            macro_names = sorted([k for k in _macros.keys() if k != 'main_poof'])
+            idx = val - 1
+            if 0 <= idx < len(macro_names):
+                macro = _macros[macro_names[idx]]
+                _executor.start(macro)
+        modbus._remove_changed_register('HREGS', 102, changed[102]['time'])
+
+    # Config sync (receive macro data from control box)
+    if 200 in changed:
+        _handle_config_sync(changed)
+
+    # Update executor
+    if _executor.running:
+        _executor.update()
+
+# Config sync buffer
+_config_buf = bytearray()
+_config_expected_len = 0
+
+def _handle_config_sync(changed):
+    global _config_buf, _config_expected_len
+
+    length = modbus.get_hreg(200)
+    offset = modbus.get_hreg(201)
+
+    if offset == 0:
+        _config_expected_len = length
+        _config_buf = bytearray(length)
+
+    # Read 30 data registers (60 bytes per chunk)
+    chunk = bytearray()
+    for reg in range(202, 232):
+        val = modbus.get_hreg(reg)
+        chunk.append((val >> 8) & 0xFF)
+        chunk.append(val & 0xFF)
+
+    end = min(offset + len(chunk), _config_expected_len)
+    _config_buf[offset:end] = chunk[:end - offset]
+
+    # Check if complete (checksum register written)
+    if 232 in changed:
+        checksum = modbus.get_hreg(232)
+        calc_sum = sum(_config_buf) & 0xFFFF
+        if calc_sum == checksum:
+            try:
+                config_str = _config_buf.decode('utf-8').rstrip('\x00')
+                config = json.loads(config_str)
+                if 'macros' in config:
+                    import os
+                    try:
+                        os.mkdir('/macros')
+                    except:
+                        pass
+                    for name, macro in config['macros'].items():
+                        if name != 'main_poof':
+                            with open('/macros/{}.json'.format(name), 'w') as f:
+                                json.dump(macro, f)
+                    load_macros()
+                modbus.set_hreg(103, 0)
+            except:
+                modbus.set_hreg(8, 5)
+
+    for reg in range(200, 233):
+        if reg in changed:
+            modbus._remove_changed_register('HREGS', reg, changed[reg]['time'])
