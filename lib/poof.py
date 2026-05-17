@@ -179,10 +179,18 @@ def _handle_config_sync(changed):
                         os.mkdir('/macros')
                     except:
                         pass
+                    # Write incoming macros
+                    incoming = set()
                     for name, macro in config['macros'].items():
-                        if name != 'main_poof':
-                            with open('/macros/{}.json'.format(name), 'w') as f:
-                                json.dump(macro, f)
+                        incoming.add(name)
+                        with open('/macros/{}.json'.format(name), 'w') as f:
+                            json.dump(macro, f)
+                    # Delete macros not in payload (except main_poof)
+                    for f in os.listdir('/macros'):
+                        if f.endswith('.json'):
+                            fname = f[:-5]
+                            if fname not in incoming:
+                                os.remove('/macros/' + f)
                     load_macros()
                 modbus.set_hreg(103, 0)
             except:

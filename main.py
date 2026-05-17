@@ -153,6 +153,7 @@ async def control_main():
 
     async def comms_task():
         nonlocal connected, last_status
+        from macro_sync import sync_pending, do_sync
         arm_counter = 0
 
         while True:
@@ -168,6 +169,10 @@ async def control_main():
                 except:
                     pass
 
+            # Push macros to relay box if needed
+            if connected and sync_pending():
+                do_sync(host, SLAVE_ADDR)
+
             try:
                 status = host.read_holding_registers(
                     slave_addr=SLAVE_ADDR,
@@ -177,6 +182,9 @@ async def control_main():
                 )
                 if not connected:
                     connected = True
+                    # First connection — push all macros to relay box
+                    from macro_sync import request_sync
+                    request_sync()
 
                 if status != last_status:
                     menu.home.update_status(

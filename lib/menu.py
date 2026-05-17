@@ -439,7 +439,9 @@ class MacroEditScreen(Screen):
             return DeleteConfirmScreen(self.filename, self.macro_list)
         if items[index] == 'Save & Back':
             from macro_store import save
+            from macro_sync import request_sync
             save(self.filename, self.macro)
+            request_sync()
             if self.macro_list:
                 self.macro_list._refresh()
             return 'pop'
@@ -483,7 +485,9 @@ class DeleteConfirmScreen(Screen):
     def on_click(self, index):
         if index == 2:  # Yes
             from macro_store import delete
+            from macro_sync import request_sync
             delete(self.filename)
+            request_sync()
             if self.macro_list:
                 self.macro_list._refresh()
             return 'home'
