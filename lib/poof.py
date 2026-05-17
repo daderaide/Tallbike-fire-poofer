@@ -134,7 +134,7 @@ def process_commands():
         modbus._remove_changed_register('HREGS', 101, changed[101]['time'])
 
     # Config sync (receive macro data from control box)
-    if 200 in changed:
+    if 200 in changed or 232 in changed:
         _handle_config_sync(changed)
 
     # Update executor
@@ -148,22 +148,24 @@ _config_expected_len = 0
 def _handle_config_sync(changed):
     global _config_buf, _config_expected_len
 
-    length = modbus.get_hreg(200)
-    offset = modbus.get_hreg(201)
+    # Buffer chunk data when a new chunk arrives (register 200 changed)
+    if 200 in changed:
+        length = modbus.get_hreg(200)
+        offset = modbus.get_hreg(201)
 
-    if offset == 0:
-        _config_expected_len = length
-        _config_buf = bytearray(length)
+        if offset == 0:
+            _config_expected_len = length
+            _config_buf = bytearray(length)
 
-    # Read 30 data registers (60 bytes per chunk)
-    chunk = bytearray()
-    for reg in range(202, 232):
-        val = modbus.get_hreg(reg)
-        chunk.append((val >> 8) & 0xFF)
-        chunk.append(val & 0xFF)
+        # Read 30 data registers (60 bytes per chunk)
+        chunk = bytearray()
+        for reg in range(202, 232):
+            val = modbus.get_hreg(reg)
+            chunk.append((val >> 8) & 0xFF)
+            chunk.append(val & 0xFF)
 
-    end = min(offset + len(chunk), _config_expected_len)
-    _config_buf[offset:end] = chunk[:end - offset]
+        end = min(offset + len(chunk), _config_expected_len)
+        _config_buf[offset:end] = chunk[:end - offset]
 
     # Check if complete (checksum register written)
     if 232 in changed:

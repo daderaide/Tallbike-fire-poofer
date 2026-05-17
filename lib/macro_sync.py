@@ -33,7 +33,7 @@ def do_sync(host, slave_addr):
     total_len = len(data)
     checksum = sum(data) & 0xFFFF
 
-    # Send in 60-byte chunks (30 registers × 2 bytes each)
+    # Send in 60-byte chunks (30 data registers × 2 bytes each)
     chunk_size = 60
     offset = 0
 
@@ -44,30 +44,19 @@ def do_sync(host, slave_addr):
         if len(chunk) < chunk_size:
             chunk = chunk + b'\x00' * (chunk_size - len(chunk))
 
-        # Write length and offset
-        try:
-            host.write_single_register(
-                slave_addr=slave_addr,
-                register_address=200,
-                register_value=total_len,
-                signed=False
-            )
-            host.write_single_register(
-                slave_addr=slave_addr,
-                register_address=201,
-                register_value=offset,
-                signed=False
-            )
+        # Build register values: [length, offset, data0, data1, ..., data29]
+        regs = [total_len, offset]
+        for i in range(30):
+            regs.append((chunk[i * 2] << 8) | chunk[i * 2 + 1])
 
-            # Write 30 data registers
-            for i in range(30):
-                val = (chunk[i * 2] << 8) | chunk[i * 2 + 1]
-                host.write_single_register(
-                    slave_addr=slave_addr,
-                    register_address=202 + i,
-                    register_value=val,
-                    signed=False
-                )
+        # Write registers 200-231 atomically
+        try:
+            host.write_multiple_registers(
+                slave_addr=slave_addr,
+                starting_address=200,
+                register_values=regs,
+                signed=False
+            )
         except:
             return False
 
