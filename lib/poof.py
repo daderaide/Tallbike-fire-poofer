@@ -23,6 +23,16 @@ _executor = None
 # Macro storage
 _macros = {}
 
+def _resolve_macro(idx):
+    """Resolve macro index to macro dict. 0=main_poof, 1+=aux by sorted name."""
+    if idx == 0:
+        return _macros.get('main_poof')
+    macro_names = sorted([k for k in _macros.keys() if k != 'main_poof'])
+    i = idx - 1
+    if 0 <= i < len(macro_names):
+        return _macros[macro_names[i]]
+    return None
+
 def update_comms_time():
     global last_comms_time
     last_comms_time = time.ticks_ms()
@@ -98,7 +108,13 @@ def process_commands():
             emergency_stop()
         modbus._remove_changed_register('HREGS', 100, changed[100]['time'])
 
-    # Fire register (button state: 1=pressed, 0=released)
+    # Select macro (written by control box before fire)
+    # 0 = main_poof, 1+ = aux macros by sorted index
+    # Just clear the change flag — actual macro lookup happens when 101 fires
+    if 102 in changed:
+        modbus._remove_changed_register('HREGS', 102, changed[102]['time'])
+
+    # Button state (1=pressed, 0=released)
     if 101 in changed:
         val = modbus.get_hreg(101)
         btn_pressed = val == 1
@@ -106,7 +122,7 @@ def process_commands():
         _executor.set_button_state(btn_pressed)
 
         if btn_pressed and armed and not _executor.running:
-            macro = get_macro('main_poof')
+            macro = _resolve_macro(modbus.get_hreg(102))
             if macro:
                 _executor.start(macro)
         elif not btn_pressed and not _executor.running:
@@ -116,20 +132,6 @@ def process_commands():
                 modbus.set_hreg(0, 1)
 
         modbus._remove_changed_register('HREGS', 101, changed[101]['time'])
-
-    # Run macro by index (aux button macros)
-    if 102 in changed:
-        val = modbus.get_hreg(102)
-        if val == 0:
-            if _executor.running:
-                _executor.stop()
-        elif armed:
-            macro_names = sorted([k for k in _macros.keys() if k != 'main_poof'])
-            idx = val - 1
-            if 0 <= idx < len(macro_names):
-                macro = _macros[macro_names[idx]]
-                _executor.start(macro)
-        modbus._remove_changed_register('HREGS', 102, changed[102]['time'])
 
     # Config sync (receive macro data from control box)
     if 200 in changed:

@@ -242,6 +242,8 @@ class HomeScreen(Screen):
             return MacroListScreen(self)
         if items[index] == 'Settings':
             return SettingsScreen()
+        if items[index].startswith('Batt:'):
+            return BatteryScreen()
         return None
 
 
@@ -259,15 +261,20 @@ class MacroListScreen(Screen):
         self.mark_dirty()
 
     def items(self):
-        rows = ['New Macro']
+        rows = ['(none)', 'New Macro']
         for name in self._macros:
             rows.append(name)
         return rows
 
     def on_click(self, index):
         if index == 0:
+            # Unassign aux macro
+            self.home.aux_macro_name = '(none)'
+            self.home.aux_macro_color = None
+            return 'home'
+        if index == 1:
             return self._create_new()
-        name = self._macros[index - 1]
+        name = self._macros[index - 2]
         if name == 'main_poof':
             from macro_store import load
             macro = load(name)
@@ -672,6 +679,93 @@ class ValveEditScreen(Screen):
         self.mark_dirty()
 
 
+# --- LED Settings Screen ---
+
+class LEDSettingsScreen(Screen):
+    def __init__(self):
+        super().__init__()
+
+    def items(self):
+        from leds import get_ring_pattern, get_ring_brightness, get_aux_brightness
+        from display import lcd
+        bl = 'On' if lcd.get_backlight() else 'Off'
+        return [
+            'Ring: {}'.format(get_ring_pattern()),
+            'Ring Bright: {}%'.format(get_ring_brightness()),
+            'Aux Bright: {}%'.format(get_aux_brightness()),
+            'Backlight: {}'.format(bl),
+        ]
+
+    def on_click(self, index):
+        from leds import PATTERNS, get_ring_pattern, get_ring_brightness
+        from leds import get_aux_brightness, set_ring_pattern
+        from leds import set_ring_brightness, set_aux_brightness
+        from display import lcd
+
+        if index == 0:
+            # Ring pattern
+            cur = PATTERNS.index(get_ring_pattern()) if get_ring_pattern() in PATTERNS else 0
+            return ChoiceScreen('Ring Pattern', PATTERNS, cur,
+                on_save=lambda i: self._set_pattern(PATTERNS[i]))
+        if index == 1:
+            # Ring brightness
+            return ValueEditScreen('Ring Brightness', get_ring_brightness(),
+                0, 100, 10, '%',
+                on_save=lambda v: self._set_ring_bri(v))
+        if index == 2:
+            # Aux brightness
+            return ValueEditScreen('Aux Brightness', get_aux_brightness(),
+                0, 100, 10, '%',
+                on_save=lambda v: self._set_aux_bri(v))
+        if index == 3:
+            # Backlight toggle
+            if lcd.get_backlight():
+                lcd.no_backlight()
+                self._save_setting('backlight', False)
+            else:
+                lcd.backlight()
+                self._save_setting('backlight', True)
+            self.mark_dirty()
+            return None
+        return None
+
+    def _save_setting(self, key, value):
+        import settings
+        settings.set(key, value)
+        settings.save()
+
+    def _set_pattern(self, pattern):
+        from leds import set_ring_pattern
+        set_ring_pattern(pattern)
+        self._save_setting('ring_pattern', pattern)
+        self.mark_dirty()
+
+    def _set_ring_bri(self, val):
+        from leds import set_ring_brightness
+        set_ring_brightness(val)
+        self._save_setting('ring_brightness', val)
+        self.mark_dirty()
+
+    def _set_aux_bri(self, val):
+        from leds import set_aux_brightness
+        set_aux_brightness(val)
+        self._save_setting('aux_brightness', val)
+        self.mark_dirty()
+
+
+# --- Battery Screen ---
+
+class BatteryScreen(Screen):
+    def __init__(self):
+        super().__init__()
+
+    def items(self):
+        return ['Battery Monitor', '(coming soon)']
+
+    def on_click(self, index):
+        return None
+
+
 # --- Settings Screen ---
 
 class SettingsScreen(Screen):
@@ -688,6 +782,10 @@ class SettingsScreen(Screen):
         return self._items
 
     def on_click(self, index):
+        if self._items[index] == 'LED Settings':
+            return LEDSettingsScreen()
+        if self._items[index] == 'Battery Monitor':
+            return BatteryScreen()
         return PlaceholderScreen(self._items[index])
 
 

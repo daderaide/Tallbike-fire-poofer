@@ -31,7 +31,18 @@ async def control_main():
     from hardware import main_btn
     from inputs import encoder_delta, encoder_clicked, aux_clicked
     from menu import Menu
+    from leds import set_ring_pattern, set_ring_brightness, set_aux_brightness
+    from display import lcd
+    import settings
     import time
+
+    # Load persistent settings
+    settings.load()
+    set_ring_pattern(settings.get('ring_pattern'))
+    set_ring_brightness(settings.get('ring_brightness'))
+    set_aux_brightness(settings.get('aux_brightness'))
+    if not settings.get('backlight'):
+        lcd.no_backlight()
 
     menu = Menu()
 
@@ -48,19 +59,38 @@ async def control_main():
 
     async def handle_button():
         nonlocal firing
+        from hardware import aux_btn
+        aux_firing = False
         while True:
-            if main_btn.value() == 0 and not firing and connected:
-                firing = True
-                queue_cmd(0, 101, 1)
+            on_home = menu.active is menu.home
 
+            # Main button
+            if main_btn.value() == 0 and not firing and not aux_firing and connected:
+                firing = True
+                queue_cmd(0, 102, 0)
+                queue_cmd(0, 101, 1)
             elif main_btn.value() == 1 and firing:
                 firing = False
+                queue_cmd(0, 101, 0)
+
+            # Aux button — only fires on home screen with a macro assigned
+            if on_home and aux_macro_idx > 0 and connected:
+                if aux_btn.value() == 0 and not aux_firing and not firing:
+                    aux_firing = True
+                    queue_cmd(0, 102, aux_macro_idx)
+                    queue_cmd(0, 101, 1)
+                elif aux_btn.value() == 1 and aux_firing:
+                    aux_firing = False
+                    queue_cmd(0, 101, 0)
+            elif aux_firing:
+                # Left home screen or lost connection while aux held
+                aux_firing = False
                 queue_cmd(0, 101, 0)
 
             await asyncio.sleep_ms(10)
 
     async def handle_leds():
-        from leds import update, set_color, set_off
+        from leds import update, set_aux_color, set_aux_off
         last = time.ticks_ms()
         was_home = False
         while True:
@@ -70,15 +100,15 @@ async def control_main():
 
             on_home = menu.active is menu.home
             if on_home and not was_home:
-                # Returned to home screen — show macro color
+                # Returned to home screen — macro color on aux
                 color = menu.home.aux_macro_color
                 if color:
-                    set_color(color[0], color[1], color[2])
+                    set_aux_color(color[0], color[1], color[2])
                 else:
-                    set_off()
+                    set_aux_off()
             elif not on_home and was_home:
-                # Entered menus — LED off
-                set_off()
+                # Entered menus — aux off, ring keeps running
+                set_aux_off()
             was_home = on_home
 
             update(delta)
@@ -86,6 +116,9 @@ async def control_main():
 
     async def handle_menu():
         nonlocal aux_macro_idx
+        from macro_store import list_macros, load
+        last_aux_name = menu.home.aux_macro_name
+
         while True:
             d = encoder_delta()
             click = encoder_clicked()
@@ -93,32 +126,28 @@ async def control_main():
 
             on_home = menu.active is menu.home
 
-            if aux and on_home and aux_macro_idx > 0 and connected:
-                # Fire aux macro
-                queue_cmd(0, 102, aux_macro_idx)
-            elif aux and on_home:
-                # No macro assigned or not connected, ignore aux
-                pass
+            if aux and on_home:
+                # Aux firing is handled by handle_button, consume the click
+                # but still pass encoder input through
+                menu.update(d, click, False)
             else:
                 # Normal menu update (aux = back in menus)
                 menu.update(d, click, aux)
-                # Check if a macro was just assigned
-                if menu.home.aux_macro_name != '(none)':
-                    # Look up macro index
-                    from macro_store import list_macros
+
+            # Re-resolve macro index only when assignment changes
+            cur_name = menu.home.aux_macro_name
+            if cur_name != last_aux_name:
+                last_aux_name = cur_name
+                if cur_name != '(none)':
                     names = sorted([n for n in list_macros() if n != 'main_poof'])
-                    for i, name in enumerate(names):
-                        from macro_store import load
-                        m = load(name)
-                        if m.get('name') == menu.home.aux_macro_name:
-                            aux_macro_idx = i + 1  # 1-indexed
+                    aux_macro_idx = 0
+                    for i, fname in enumerate(names):
+                        m = load(fname)
+                        if m.get('name') == cur_name:
+                            aux_macro_idx = i + 1
                             break
                 else:
                     aux_macro_idx = 0
-                continue
-
-            # Still need to handle encoder even when aux fired macro
-            menu.update(d, click, False)
 
             await asyncio.sleep_ms(20)
 
