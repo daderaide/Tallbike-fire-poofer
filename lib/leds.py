@@ -5,8 +5,9 @@ from hardware import main_ring, aux_led
 import random
 
 NUM_LEDS = 16
-vals = [0.0] * NUM_LEDS
-hues = [0.0] * NUM_LEDS
+# Each LED: [birth_ms, lifetime_ms, hue]
+_sparks = [[0, 0, 0.0]] * NUM_LEDS
+_sparks_init = False
 
 # Available ring patterns (list will grow)
 PATTERNS = ['blink_fade']
@@ -52,8 +53,14 @@ def _hsv_to_rgb(h, s, v):
         r, g, b = v, p, q
     return int(r * 255), int(g * 255), int(b * 255)
 
+# Precomputed gamma 2.0 brightness LUT (0-100 -> 0-255 scale factor)
+# At 10%: 2, at 25%: 15, at 50%: 63, at 75%: 143, at 100%: 255
+_GAMMA_LUT = bytes([int(255 * (i / 100.0) ** 2.0) for i in range(101)])
+
 def _scale(val, brightness):
-    return (val * brightness) // 100
+    if brightness <= 0:
+        return 0
+    return (val * _GAMMA_LUT[brightness]) >> 8
 
 # --- Main ring controls ---
 
@@ -128,16 +135,33 @@ def update(delta_ms):
         main_ring.write()
         return
 
-    # blink_fade pattern (the original sparkle)
+    # blink_fade pattern (sparkle with absolute timing)
     if _ring_pattern == 'blink_fade':
-        for i in range(NUM_LEDS):
-            vals[i] -= 0.005 * delta_ms * 0.1
-            if vals[i] <= 0:
-                vals[i] = random.random()
-                hues[i] = _time(0.07) + _triangle(i / NUM_LEDS) * 0.2
+        global _sparks_init, _sparks
+        now = time.ticks_ms()
+
+        if not _sparks_init:
+            _sparks = []
+            for i in range(NUM_LEDS):
+                lt = 400 + int(random.random() * 1600)  # 400-2000ms lifetime
+                born = now - int(random.random() * lt)   # stagger initial births
+                h = _time(0.07) + _triangle(i / NUM_LEDS) * 0.2
+                _sparks.append([born, lt, h])
+            _sparks_init = True
 
         for i in range(NUM_LEDS):
-            v = vals[i] * vals[i]
-            r, g, b = _hsv_to_rgb(hues[i], 1.0, v)
+            born, lt, h = _sparks[i]
+            age = time.ticks_diff(now, born)
+            if age >= lt:
+                # Respawn
+                lt = 400 + int(random.random() * 1600)
+                h = _time(0.07) + _triangle(i / NUM_LEDS) * 0.2
+                _sparks[i] = [now, lt, h]
+                age = 0
+
+            # Fade: bright at birth, dims to zero over lifetime
+            frac = 1.0 - (age / lt)
+            v = frac * frac  # quadratic ease-out for nice tail
+            r, g, b = _hsv_to_rgb(h, 1.0, v)
             main_ring[i] = (_scale(r, bri), _scale(g, bri), _scale(b, bri))
         main_ring.write()
