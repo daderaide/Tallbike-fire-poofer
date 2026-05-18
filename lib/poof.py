@@ -4,6 +4,7 @@ import time
 import json
 from hardware import i2c, igniter
 from comms import modbus
+import battery
 
 # PCF8574A address
 RELAY_ADDR = 0x21
@@ -16,6 +17,8 @@ armed = False
 relay_bitmask = ALL_OFF
 last_comms_time = time.ticks_ms()
 COMMS_TIMEOUT_MS = 500
+_last_sensor_ms = 0
+_SENSOR_INTERVAL_MS = 500  # read batteries/pressure every 500ms
 
 # Executor (lazy init)
 _executor = None
@@ -81,6 +84,40 @@ def load_macros():
                     pass
     except:
         pass
+
+def init():
+    """Initialize sensors. Call once at startup."""
+    battery.init()
+    load_macros()
+
+def read_sensors():
+    """Periodically read batteries and pressure, update registers."""
+    global _last_sensor_ms
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _last_sensor_ms) < _SENSOR_INTERVAL_MS:
+        return
+    _last_sensor_ms = now
+
+    # Pressure (ADS1015 A3) — convert mV to PSI
+    # Sensor: 0.5-4.5V = 0-500 PSI, ratiometric
+    psi_mv = battery.read_pressure_raw()
+    if psi_mv <= 500:
+        psi = 0
+    elif psi_mv >= 4500:
+        psi = 500
+    else:
+        psi = int((psi_mv - 500) * 500 / 4000)
+    modbus.set_hreg(2, psi)
+
+    # Battery voltages (mV)
+    modbus.set_hreg(4, battery.read_igniter())
+    modbus.set_hreg(5, battery.read_valve())
+
+    # Check for low battery errors
+    if battery.igniter_mv > 0 and battery.igniter_mv < battery.WARN_IGNITER:
+        modbus.set_hreg(8, 3)  # LOW BATT IGN
+    elif battery.valve_mv > 0 and battery.valve_mv < battery.WARN_VALVE:
+        modbus.set_hreg(8, 4)  # LOW BATT VALVE
 
 def get_macro(name):
     return _macros.get(name)

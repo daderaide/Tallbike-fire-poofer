@@ -20,6 +20,7 @@ _aux_r = 0
 _aux_g = 0
 _aux_b = 0
 _aux_on = False
+_aux_rainbow = False
 _aux_brightness = 100  # 0-100
 
 def _time(interval):
@@ -74,15 +75,22 @@ def get_ring_brightness():
 # --- Aux LED controls ---
 
 def set_aux_color(r, g, b):
-    global _aux_r, _aux_g, _aux_b, _aux_on
+    global _aux_r, _aux_g, _aux_b, _aux_on, _aux_rainbow
     _aux_r = r
     _aux_g = g
     _aux_b = b
     _aux_on = True
+    _aux_rainbow = False
 
 def set_aux_off():
-    global _aux_on
+    global _aux_on, _aux_rainbow
     _aux_on = False
+    _aux_rainbow = False
+
+def set_aux_rainbow():
+    global _aux_on, _aux_rainbow
+    _aux_on = True
+    _aux_rainbow = True
 
 def set_aux_brightness(level):
     global _aux_brightness
@@ -99,9 +107,16 @@ def update(delta_ms):
 
     # Aux LED
     if _aux_on:
-        aux_led[0] = (_scale(_aux_r, aux_bri),
-                       _scale(_aux_g, aux_bri),
-                       _scale(_aux_b, aux_bri))
+        if _aux_rainbow:
+            hue = _time(0.05)  # slow cycle through full spectrum
+            r, g, b = _hsv_to_rgb(hue, 1.0, 1.0)
+            aux_led[0] = (_scale(r, aux_bri),
+                           _scale(g, aux_bri),
+                           _scale(b, aux_bri))
+        else:
+            aux_led[0] = (_scale(_aux_r, aux_bri),
+                           _scale(_aux_g, aux_bri),
+                           _scale(_aux_b, aux_bri))
     else:
         aux_led[0] = (0, 0, 0)
     aux_led.write()

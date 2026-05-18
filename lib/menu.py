@@ -15,6 +15,7 @@ COLORS = [
     ('Purple', (128, 0, 255)),
     ('Pink', (255, 0, 128)),
     ('White', (255, 255, 255)),
+    ('Rainbow', 'rainbow'),
 ]
 
 # --- Base Screen ---
@@ -201,7 +202,9 @@ class HomeScreen(Screen):
         self.state = 0
         self.error = 0
         self.pressure = 0
-        self.batt_v = 0
+        self.batt_ign = 0
+        self.batt_valve = 0
+        self.batt_ctrl = 0
         self.connected = False
         self.aux_macro_name = '(none)'
         self.aux_macro_color = None
@@ -213,20 +216,30 @@ class HomeScreen(Screen):
 
         state_name = STATE_NAMES.get(self.state, '???')
         line1 = '{} | {}psi'.format(state_name, self.pressure)
-        line2 = 'Batt: {}mV'.format(self.batt_v)
 
         if self.error > 0:
             line2 = ERROR_NAMES.get(self.error, '???')
+        else:
+            # Show lowest battery percentage as quick glance
+            from battery import percent_1s, percent_3s
+            pct_ctrl = percent_1s(self.batt_ctrl)
+            pct_ign = percent_1s(self.batt_ign)
+            pct_valve = percent_3s(self.batt_valve)
+            min_pct = min(p for p in [pct_ctrl, pct_ign, pct_valve] if p > 0) if any([pct_ctrl, pct_ign, pct_valve]) else 0
+            line2 = 'Batt: {}%'.format(min_pct)
 
         return [line1, line2, 'Macro: ' + self.aux_macro_name, 'Settings']
 
-    def update_status(self, state, error, pressure, batt_v):
+    def update_status(self, state, error, pressure, batt_ign, batt_valve, batt_ctrl):
         changed = (state != self.state or error != self.error or
-                   pressure != self.pressure or batt_v != self.batt_v)
+                   pressure != self.pressure or batt_ign != self.batt_ign or
+                   batt_valve != self.batt_valve or batt_ctrl != self.batt_ctrl)
         self.state = state
         self.error = error
         self.pressure = pressure
-        self.batt_v = batt_v
+        self.batt_ign = batt_ign
+        self.batt_valve = batt_valve
+        self.batt_ctrl = batt_ctrl
         self.connected = True
         if changed:
             self.mark_dirty()
@@ -241,9 +254,9 @@ class HomeScreen(Screen):
         if items[index].startswith('Macro:'):
             return MacroListScreen(self)
         if items[index] == 'Settings':
-            return SettingsScreen()
+            return SettingsScreen(self)
         if items[index].startswith('Batt:'):
-            return BatteryScreen()
+            return BatteryScreen(self)
         return None
 
 
@@ -412,7 +425,11 @@ class MacroEditScreen(Screen):
 
     def _color_name(self):
         c = self.macro.get('color', [255, 0, 0])
+        if c == 'rainbow':
+            return 'Rainbow'
         for name, rgb in COLORS:
+            if rgb == 'rainbow':
+                continue
             if list(rgb) == c:
                 return name
         return 'Custom'
@@ -464,7 +481,10 @@ class MacroEditScreen(Screen):
         self.mark_dirty()
 
     def _set_color(self, color):
-        self.macro['color'] = list(color)
+        if color == 'rainbow':
+            self.macro['color'] = 'rainbow'
+        else:
+            self.macro['color'] = list(color)
         self.mark_dirty()
 
 
@@ -515,7 +535,10 @@ class ColorPickerScreen(Screen):
         super().__init__()
         self.on_save = on_save
         for i, (name, rgb) in enumerate(COLORS):
-            if list(rgb) == current:
+            if current == 'rainbow' and rgb == 'rainbow':
+                self.cursor = i
+                break
+            elif rgb != 'rainbow' and list(rgb) == current:
                 self.cursor = i
                 break
 
@@ -802,21 +825,48 @@ class LEDSettingsScreen(Screen):
 # --- Battery Screen ---
 
 class BatteryScreen(Screen):
-    def __init__(self):
+    def __init__(self, home=None):
         super().__init__()
+        self.home = home
+        self._last_values = None
 
     def items(self):
-        return ['Battery Monitor', '(coming soon)']
+        from battery import percent_1s, percent_3s
+        h = self.home
+        if h is None or not h.connected:
+            return ['Battery Monitor', 'No data', 'Done']
+
+        ctrl_pct = percent_1s(h.batt_ctrl)
+        ign_pct = percent_1s(h.batt_ign)
+        valve_pct = percent_3s(h.batt_valve)
+
+        rows = [
+            'Ctrl:  {}mV  {}%'.format(h.batt_ctrl, ctrl_pct),
+            'Ign:   {}mV  {}%'.format(h.batt_ign, ign_pct),
+            'Valve: {}mV  {}%'.format(h.batt_valve, valve_pct),
+            'Done'
+        ]
+
+        # Auto-refresh when values change
+        cur = (h.batt_ctrl, h.batt_ign, h.batt_valve)
+        if cur != self._last_values:
+            self._last_values = cur
+            self.mark_dirty()
+
+        return rows
 
     def on_click(self, index):
+        if self.items()[index] == 'Done':
+            return 'pop'
         return None
 
 
 # --- Settings Screen ---
 
 class SettingsScreen(Screen):
-    def __init__(self):
+    def __init__(self, home=None):
         super().__init__()
+        self.home = home
         self._items = [
             'LED Settings',
             'Battery Monitor',
@@ -831,7 +881,7 @@ class SettingsScreen(Screen):
         if self._items[index] == 'LED Settings':
             return LEDSettingsScreen()
         if self._items[index] == 'Battery Monitor':
-            return BatteryScreen()
+            return BatteryScreen(self.home)
         return PlaceholderScreen(self._items[index])
 
 

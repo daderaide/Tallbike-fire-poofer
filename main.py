@@ -17,12 +17,15 @@ from hardware import ROLE
 
 async def relay_main():
     from comms import modbus
-    from poof import process_commands, check_watchdog, update_comms_time
+    from poof import init, process_commands, check_watchdog, update_comms_time, read_sensors
+
+    init()
 
     while True:
         if modbus.process():
             update_comms_time()
         process_commands()
+        read_sensors()
         check_watchdog()
         await asyncio.sleep_ms(0)
 
@@ -34,6 +37,7 @@ async def control_main():
     from leds import set_ring_pattern, set_ring_brightness, set_aux_brightness
     from display import lcd
     import settings
+    import battery
     import time
 
     # Load persistent settings
@@ -43,6 +47,9 @@ async def control_main():
     set_aux_brightness(settings.get('aux_brightness'))
     if not settings.get('backlight'):
         lcd.no_backlight()
+
+    # Init battery monitor (control box local ADC)
+    battery.init()
 
     menu = Menu()
 
@@ -108,8 +115,9 @@ async def control_main():
             await asyncio.sleep_ms(10)
 
     async def handle_leds():
-        from leds import update, set_aux_color, set_aux_off
+        from leds import update, set_aux_color, set_aux_off, set_aux_rainbow
         last = time.ticks_ms()
+        last_color = None
         was_home = False
         while True:
             now = time.ticks_ms()
@@ -117,16 +125,19 @@ async def control_main():
             last = now
 
             on_home = menu.active is menu.home
-            if on_home and not was_home:
-                # Returned to home screen — macro color on aux
+            if on_home:
                 color = menu.home.aux_macro_color
-                if color:
-                    set_aux_color(color[0], color[1], color[2])
-                else:
-                    set_aux_off()
+                if color != last_color or not was_home:
+                    last_color = color
+                    if color == 'rainbow':
+                        set_aux_rainbow()
+                    elif color:
+                        set_aux_color(color[0], color[1], color[2])
+                    else:
+                        set_aux_rainbow()  # default: rainbow when no macro
             elif not on_home and was_home:
-                # Entered menus — aux off, ring keeps running
                 set_aux_off()
+                last_color = None
             was_home = on_home
 
             update(delta)
@@ -173,6 +184,7 @@ async def control_main():
         nonlocal connected, last_status
         from macro_sync import sync_pending, do_sync
         arm_counter = 0
+        batt_counter = 0
 
         while True:
             while cmd_queue:
@@ -190,6 +202,14 @@ async def control_main():
             # Push macros to relay box if needed
             if connected and sync_pending():
                 do_sync(host, SLAVE_ADDR)
+
+            # Read control box battery periodically and push to relay
+            batt_counter += 1
+            if batt_counter >= 50:  # every ~500ms
+                batt_counter = 0
+                ctrl_mv = battery.read_control()
+                if connected and ctrl_mv > 0:
+                    queue_cmd(3, 6, ctrl_mv)  # low priority, reg 6
 
             try:
                 status = host.read_holding_registers(
@@ -209,7 +229,9 @@ async def control_main():
                         state=status[0],
                         error=status[8],
                         pressure=status[2],
-                        batt_v=status[4]
+                        batt_ign=status[4],
+                        batt_valve=status[5],
+                        batt_ctrl=battery.control_mv
                     )
                     last_status = status
             except:
