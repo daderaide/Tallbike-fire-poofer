@@ -19,7 +19,8 @@ ERROR_NAMES = {
     2: 'OVER PRESSURE',
     3: 'LOW BATT IGN',
     4: 'LOW BATT VALVE',
-    5: 'MACRO ERROR'
+    5: 'MACRO ERROR',
+    6: 'MELTDOWN IMMINENT'
 }
 
 def show_status(state, error=0, pressure=0, batt_v=0):

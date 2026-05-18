@@ -1,18 +1,15 @@
 {
     "name": "Main Poof",
+    "color": [255, 0, 0],
     "steps": [
         {
-            "trigger": "press",
-            "pressure": 0,
+            "duration": 1000,
             "delay_after": 0,
-            "ign_dur": "held",
+            "pressure": 0,
             "ign_offset": 0,
-            "valves": [
-                {"valve": 1, "duration": "held"},
-                {"valve": 2, "duration": "held"},
-                {"valve": 3, "duration": "held"},
-                {"valve": 4, "duration": "held"}
-            ]
+            "ign_dur": 500,
+            "valves": [1, 2, 3, 4, 5, 6, 7, 8]
         }
-    ]
+    ],
+    "finishing_step": null
 }

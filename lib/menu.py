@@ -293,14 +293,15 @@ class MacroListScreen(Screen):
             'color': [255, 0, 0],
             'steps': [
                 {
-                    'trigger': 'press',
-                    'pressure': 0,
+                    'duration': 500,
                     'delay_after': 0,
-                    'ign_dur': 'held',
+                    'pressure': 0,
                     'ign_offset': 0,
+                    'ign_dur': 300,
                     'valves': []
                 }
-            ]
+            ],
+            'finishing_step': None
         }
         save(name, macro)
         self._refresh()
@@ -391,10 +392,19 @@ class MacroEditScreen(Screen):
             'LED: ' + self._color_name(),
         ]
         for i, step in enumerate(self.macro['steps']):
-            trigger = step.get('trigger', '?')
+            dur = step.get('duration', 0)
             n_valves = len(step.get('valves', []))
-            rows.append('Step {} ({}, {}v)'.format(i + 1, trigger, n_valves))
+            rows.append('Step {} ({}ms, {}v)'.format(i + 1, dur, n_valves))
         rows.append('Add Step')
+
+        fin = self.macro.get('finishing_step')
+        if fin:
+            dur = fin.get('duration', 0)
+            n_valves = len(fin.get('valves', []))
+            rows.append('Finish ({}ms, {}v)'.format(dur, n_valves))
+        else:
+            rows.append('Finish: (none)')
+
         if self.filename != 'main_poof':
             rows.append('Delete Macro')
         rows.append('Save & Back')
@@ -424,17 +434,19 @@ class MacroEditScreen(Screen):
             return StepEditScreen(self.macro, step_idx)
         if index == 2 + step_count:  # Add Step
             self.macro['steps'].append({
-                'trigger': 'immediate',
-                'pressure': 0,
+                'duration': 500,
                 'delay_after': 0,
-                'ign_dur': 'held',
+                'pressure': 0,
                 'ign_offset': 0,
+                'ign_dur': 300,
                 'valves': []
             })
             self.mark_dirty()
             return StepEditScreen(self.macro, len(self.macro['steps']) - 1)
 
         items = self.items()
+        if items[index].startswith('Finish'):
+            return FinishingStepScreen(self.macro)
         if items[index] == 'Delete Macro':
             return DeleteConfirmScreen(self.filename, self.macro_list)
         if items[index] == 'Save & Back':
@@ -530,62 +542,62 @@ class StepEditScreen(Screen):
 
     def items(self):
         s = self.step
-        trigger = s.get('trigger', 'press')
-        ign_dur = s.get('ign_dur', 'held')
-        ign_dur_str = 'held' if ign_dur == 'held' else '{}ms'.format(ign_dur)
-
         rows = [
-            'Trigger: {}'.format(trigger),
-            'Pressure: {}psi'.format(s.get('pressure', 0)),
+            'Duration: {}ms'.format(s.get('duration', 0)),
             'Delay after: {}ms'.format(s.get('delay_after', 0)),
-            'Ign dur: {}'.format(ign_dur_str),
+            'Pressure: {}psi'.format(s.get('pressure', 0)),
+            'Ign dur: {}ms'.format(s.get('ign_dur', 0)),
             'Ign offset: {}ms'.format(s.get('ign_offset', 0)),
         ]
         for v in s.get('valves', []):
-            vtype = 'NC' if v['valve'] <= 4 else 'NO'
-            dur = v.get('duration', 0)
-            dur_str = 'held' if dur == 'held' else '{}ms'.format(dur)
-            rows.append('V{} ({}) {}'.format(v['valve'], vtype, dur_str))
+            vtype = 'NC' if v <= 4 else 'NO'
+            rows.append('Valve {} ({})'.format(v, vtype))
         rows.append('Add Valve')
+        if len(self.macro['steps']) > 1:
+            rows.append('Remove Step')
         rows.append('Done')
         return rows
 
     def on_click(self, index):
         s = self.step
-        triggers = ['press', 'release', 'immediate']
 
-        if index == 0:  # Trigger
-            cur = triggers.index(s.get('trigger', 'press')) if s.get('trigger', 'press') in triggers else 0
-            return ChoiceScreen('Step Trigger', triggers, cur,
-                on_save=lambda i: self._set('trigger', triggers[i]))
-        if index == 1:  # Pressure
-            return ValueEditScreen('Pressure Threshold', s.get('pressure', 0),
-                0, 200, 5, 'psi',
-                on_save=lambda v: self._set('pressure', v))
-        if index == 2:  # Delay after
+        if index == 0:  # Duration
+            return ValueEditScreen('Step Duration', s.get('duration', 0),
+                50, 10000, 50, 'ms',
+                on_save=lambda v: self._set('duration', v))
+        if index == 1:  # Delay after
             return ValueEditScreen('Delay After', s.get('delay_after', 0),
                 0, 5000, 50, 'ms',
                 on_save=lambda v: self._set('delay_after', v))
+        if index == 2:  # Pressure
+            return ValueEditScreen('Pressure Threshold', s.get('pressure', 0),
+                0, 200, 5, 'psi',
+                on_save=lambda v: self._set('pressure', v))
         if index == 3:  # Ign dur
-            if s.get('ign_dur') == 'held':
-                cur = 0
-            else:
-                cur = 1
-            return ChoiceScreen('Igniter Duration', ['While held', 'Timed'],
-                cur, on_save=lambda i: self._set_ign_dur_mode(i))
+            return ValueEditScreen('Igniter Duration', s.get('ign_dur', 0),
+                0, 1000, 50, 'ms',
+                on_save=lambda v: self._set('ign_dur', v))
         if index == 4:  # Ign offset
             return ValueEditScreen('Igniter Offset', s.get('ign_offset', 0),
-                -500, 500, 5, 'ms',
+                0, 1000, 10, 'ms',
                 on_save=lambda v: self._set('ign_offset', v))
 
         valve_start = 5
         valve_count = len(s.get('valves', []))
         if valve_start <= index < valve_start + valve_count:
+            # Click on a valve — remove it
             valve_idx = index - valve_start
-            return ValveEditScreen(s, valve_idx)
+            s['valves'].pop(valve_idx)
+            self.mark_dirty()
+            return None
         if index == valve_start + valve_count:  # Add Valve
             return ValveSelectScreen(s)
-        if index == valve_start + valve_count + 1:  # Done
+
+        items = self.items()
+        if items[index] == 'Remove Step':
+            self.macro['steps'].pop(self.step_idx)
+            return 'pop'
+        if items[index] == 'Done':
             return 'pop'
         return None
 
@@ -593,13 +605,95 @@ class StepEditScreen(Screen):
         self.step[key] = value
         self.mark_dirty()
 
-    def _set_ign_dur_mode(self, choice):
-        if choice == 0:
-            self.step['ign_dur'] = 'held'
-        else:
-            if self.step.get('ign_dur') == 'held':
-                self.step['ign_dur'] = 100
-        self.mark_dirty()
+
+# --- Finishing Step Screen ---
+
+class FinishingStepScreen(Screen):
+    def __init__(self, macro):
+        super().__init__()
+        self.macro = macro
+
+    def _get_step(self):
+        return self.macro.get('finishing_step')
+
+    def items(self):
+        s = self._get_step()
+        if s is None:
+            return ['No finishing step', 'Add finishing step', 'Done']
+
+        rows = [
+            'Duration: {}ms'.format(s.get('duration', 0)),
+            'Pressure: {}psi'.format(s.get('pressure', 0)),
+            'Ign dur: {}ms'.format(s.get('ign_dur', 0)),
+            'Ign offset: {}ms'.format(s.get('ign_offset', 0)),
+        ]
+        for v in s.get('valves', []):
+            vtype = 'NC' if v <= 4 else 'NO'
+            rows.append('Valve {} ({})'.format(v, vtype))
+        rows.append('Add Valve')
+        rows.append('Remove Finish')
+        rows.append('Done')
+        return rows
+
+    def on_click(self, index):
+        s = self._get_step()
+        if s is None:
+            if index == 1:  # Add
+                self.macro['finishing_step'] = {
+                    'duration': 300,
+                    'delay_after': 0,
+                    'pressure': 0,
+                    'ign_offset': 0,
+                    'ign_dur': 300,
+                    'valves': []
+                }
+                self.mark_dirty()
+                return None
+            if index == 2:  # Done
+                return 'pop'
+            return None
+
+        if index == 0:  # Duration
+            return ValueEditScreen('Finish Duration', s.get('duration', 0),
+                50, 10000, 50, 'ms',
+                on_save=lambda v: self._set('duration', v))
+        if index == 1:  # Pressure
+            return ValueEditScreen('Pressure Threshold', s.get('pressure', 0),
+                0, 200, 5, 'psi',
+                on_save=lambda v: self._set('pressure', v))
+        if index == 2:  # Ign dur
+            return ValueEditScreen('Igniter Duration', s.get('ign_dur', 0),
+                0, 1000, 50, 'ms',
+                on_save=lambda v: self._set('ign_dur', v))
+        if index == 3:  # Ign offset
+            return ValueEditScreen('Igniter Offset', s.get('ign_offset', 0),
+                0, 1000, 10, 'ms',
+                on_save=lambda v: self._set('ign_offset', v))
+
+        valve_start = 4
+        valve_count = len(s.get('valves', []))
+        if valve_start <= index < valve_start + valve_count:
+            valve_idx = index - valve_start
+            s['valves'].pop(valve_idx)
+            self.mark_dirty()
+            return None
+        if index == valve_start + valve_count:  # Add Valve
+            return ValveSelectScreen(s)
+
+        items = self.items()
+        if items[index] == 'Remove Finish':
+            self.macro['finishing_step'] = None
+            self.mark_dirty()
+            return None
+        if items[index] == 'Done':
+            return 'pop'
+        return None
+
+    def _set(self, key, value):
+        s = self._get_step()
+        if s:
+            s[key] = value
+            self.mark_dirty()
 
 
 # --- Valve Select Screen ---
@@ -608,7 +702,7 @@ class ValveSelectScreen(Screen):
     def __init__(self, step):
         super().__init__()
         self.step_data = step
-        existing = [v['valve'] for v in step.get('valves', [])]
+        existing = step.get('valves', [])
         self._available = [i for i in range(1, 9) if i not in existing]
 
     def items(self):
@@ -624,63 +718,11 @@ class ValveSelectScreen(Screen):
     def on_click(self, index):
         if index < len(self._available):
             valve_num = self._available[index]
-            new_valve = {'valve': valve_num, 'duration': 'held'}
-            self.step_data.setdefault('valves', []).append(new_valve)
+            self.step_data.setdefault('valves', []).append(valve_num)
             self._available.remove(valve_num)
             self.mark_dirty()
             return None
         return 'pop'
-
-
-# --- Valve Edit Screen ---
-
-class ValveEditScreen(Screen):
-    def __init__(self, step, valve_idx):
-        super().__init__()
-        self.step_data = step
-        self.valve_idx = valve_idx
-
-    @property
-    def valve(self):
-        return self.step_data['valves'][self.valve_idx]
-
-    def items(self):
-        v = self.valve
-        vtype = 'NC' if v['valve'] <= 4 else 'NO'
-        dur = v.get('duration', 0)
-        dur_str = 'held' if dur == 'held' else '{}ms'.format(dur)
-
-        rows = [
-            'Valve {} ({})'.format(v['valve'], vtype),
-            'Duration: {}'.format(dur_str),
-            'Remove Valve',
-            'Done'
-        ]
-        return rows
-
-    def on_click(self, index):
-        v = self.valve
-        if index == 1:  # Duration
-            if v.get('duration') == 'held':
-                cur = 0
-            else:
-                cur = 1
-            return ChoiceScreen('Valve Duration', ['While held', 'Timed'],
-                cur, on_save=lambda i: self._set_dur_mode(i))
-        if index == 2:  # Remove
-            self.step_data['valves'].pop(self.valve_idx)
-            return 'pop'
-        if index == 3:  # Done
-            return 'pop'
-        return None
-
-    def _set_dur_mode(self, choice):
-        if choice == 0:
-            self.valve['duration'] = 'held'
-        else:
-            if self.valve.get('duration') == 'held':
-                self.valve['duration'] = 200
-        self.mark_dirty()
 
 
 # --- LED Settings Screen ---

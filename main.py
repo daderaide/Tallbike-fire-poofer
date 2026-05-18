@@ -61,31 +61,49 @@ async def control_main():
         nonlocal firing
         from hardware import aux_btn
         aux_firing = False
+        RELEASE = 0xFFFF
+        # _dbg_count = 0
         while True:
-            on_home = menu.active is menu.home
+            try:
+                on_home = menu.active is menu.home
 
-            # Main button
-            if main_btn.value() == 0 and not firing and not aux_firing and connected:
-                firing = True
-                queue_cmd(0, 102, 0)
-                queue_cmd(0, 101, 1)
-            elif main_btn.value() == 1 and firing:
-                firing = False
-                queue_cmd(0, 101, 0)
+                # Main button
+                if main_btn.value() == 0 and not firing and not aux_firing and connected:
+                    firing = True
+                    # print('BTN: main press')
+                    queue_cmd(0, 102, 0)
+                elif main_btn.value() == 1 and firing:
+                    firing = False
+                    # print('BTN: main release')
+                    queue_cmd(0, 102, RELEASE)
 
-            # Aux button — only fires on home screen with a macro assigned
-            if on_home and aux_macro_idx > 0 and connected:
-                if aux_btn.value() == 0 and not aux_firing and not firing:
-                    aux_firing = True
-                    queue_cmd(0, 102, aux_macro_idx)
-                    queue_cmd(0, 101, 1)
-                elif aux_btn.value() == 1 and aux_firing:
+                # Aux button — only fires on home screen with a macro assigned
+                if on_home and aux_macro_idx > 0 and connected:
+                    if aux_btn.value() == 0 and not aux_firing and not firing:
+                        aux_firing = True
+                        # print('BTN: aux press idx={}'.format(aux_macro_idx))
+                        queue_cmd(0, 102, aux_macro_idx)
+                    elif aux_btn.value() == 1 and aux_firing:
+                        aux_firing = False
+                        # print('BTN: aux release')
+                        queue_cmd(0, 102, RELEASE)
+                elif aux_firing:
+                    # print('BTN: aux emergency release on_home={} idx={} conn={}'.format(on_home, aux_macro_idx, connected))
                     aux_firing = False
-                    queue_cmd(0, 101, 0)
-            elif aux_firing:
-                # Left home screen or lost connection while aux held
+                    queue_cmd(0, 102, RELEASE)
+
+                # # Periodic state dump
+                # _dbg_count += 1
+                # if _dbg_count >= 500:  # every 5 seconds
+                #     _dbg_count = 0
+                #     if firing or aux_firing:
+                #         print('BTN state: firing={} aux_firing={} on_home={} idx={} conn={}'.format(
+                #             firing, aux_firing, on_home, aux_macro_idx, connected))
+
+            except Exception as e:
+                print('handle_button error:', e)
+                firing = False
                 aux_firing = False
-                queue_cmd(0, 101, 0)
 
             await asyncio.sleep_ms(10)
 

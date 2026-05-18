@@ -36,8 +36,8 @@ Both boxes store identical copies of the config file (JSON). Config changes are 
 | Register | Name              | Type   | Description                              |
 |----------|-------------------|--------|------------------------------------------|
 | 100      | arm               | uint16 | 1=arm, 0=disarm                          |
-| 101      | fire              | uint16 | 1=fire, 0=stop                           |
-| 102      | run_macro         | uint16 | Macro index to run, 0=stop               |
+| 101      | (unused)          | uint16 | Reserved                                 |
+| 102      | fire_macro        | uint16 | Macro index=press, 0xFFFF=release        |
 | 103      | save_config       | uint16 | 1=save triggered, resets to 0 when done  |
 
 ## Config Sync Registers (written by control box)
@@ -92,6 +92,7 @@ The control box does not have a safety-critical timeout — if it loses comms, i
 | 3    | low_batt_igniter  | Igniter battery below configured threshold        |
 | 4    | low_batt_valve    | Valve battery below configured threshold          |
 | 5    | macro_error       | Invalid macro step or bad config data             |
+| 6    | ign_cooldown      | Igniter cooldown active — step paused             |
 
 ### Future Error Codes (reserved)
 

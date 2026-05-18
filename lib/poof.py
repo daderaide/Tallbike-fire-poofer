@@ -61,7 +61,6 @@ def emergency_stop():
     if _executor is not None:
         _executor.state = 0
         _executor._ign_active = False
-        _executor._valve_timers = []
         _executor.macro = None
     modbus.set_hreg(0, 0)
     modbus.set_hreg(9, 0)
@@ -108,30 +107,31 @@ def process_commands():
             emergency_stop()
         modbus._remove_changed_register('HREGS', 100, changed[100]['time'])
 
-    # Select macro (written by control box before fire)
-    # 0 = main_poof, 1+ = aux macros by sorted index
-    # Just clear the change flag — actual macro lookup happens when 101 fires
+    # Combined macro select + fire (register 102)
+    # value 0-N = press with macro index, 0xFFFF = release
+    RELEASE = 0xFFFF
     if 102 in changed:
-        modbus._remove_changed_register('HREGS', 102, changed[102]['time'])
-
-    # Button state (1=pressed, 0=released)
-    if 101 in changed:
-        val = modbus.get_hreg(101)
-        btn_pressed = val == 1
+        val = modbus.get_hreg(102)
+        btn_pressed = val != RELEASE
+        # print('POOF: reg102={} pressed={} armed={} running={}'.format(val, btn_pressed, armed, _executor.running))
 
         _executor.set_button_state(btn_pressed)
 
         if btn_pressed and armed and not _executor.running:
-            macro = _resolve_macro(modbus.get_hreg(102))
+            macro = _resolve_macro(val)
+            # print('POOF: resolved macro={}'.format('OK' if macro else 'NONE'))
             if macro:
+                # print('POOF: starting macro, steps={}'.format(len(macro.get('steps', []))))
                 _executor.start(macro)
         elif not btn_pressed and not _executor.running:
             set_relays(ALL_OFF)
             set_igniter(0)
             if armed:
                 modbus.set_hreg(0, 1)
+        # elif not btn_pressed and _executor.running:
+        #     print('POOF: release while running, state={}'.format(_executor.state))
 
-        modbus._remove_changed_register('HREGS', 101, changed[101]['time'])
+        modbus._remove_changed_register('HREGS', 102, changed[102]['time'])
 
     # Config sync (receive macro data from control box)
     if 200 in changed or 232 in changed:

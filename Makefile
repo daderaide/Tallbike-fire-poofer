@@ -15,7 +15,5 @@ upload:
 	mpremote connect /dev/tty.usbserial-110 cp main.py :main.py
 	mpremote connect /dev/tty.usbserial-10 cp -r lib/ :
 	mpremote connect /dev/tty.usbserial-10 cp main.py :main.py
-	-mpremote connect /dev/tty.usbserial-110 mkdir :macros
 	mpremote connect /dev/tty.usbserial-110 cp macros/main_poof.json :macros/main_poof.json
-	-mpremote connect /dev/tty.usbserial-10 mkdir :macros
 	mpremote connect /dev/tty.usbserial-10 cp macros/main_poof.json :macros/main_poof.json
