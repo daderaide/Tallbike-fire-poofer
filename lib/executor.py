@@ -268,12 +268,12 @@ class Executor:
         duration = step.get('duration', 0)
         elapsed = time.ticks_diff(now, self._step_start_ms)
         if elapsed >= duration:
-            # Step complete
-            self._set_relays(ALL_OFF)
+            # Step complete — kill igniter regardless
             if self._ign_active:
                 self._igniter_off(now)
 
             if self.state == FINISHING:
+                self._set_relays(ALL_OFF)
                 self.stop()
                 return
 
@@ -282,9 +282,13 @@ class Executor:
 
             delay = step.get('delay_after', 0)
             if delay > 0:
+                # Has a gap — close valves, wait
+                self._set_relays(ALL_OFF)
                 self.state = DELAY_AFTER
                 self._delay_start_ms = time.ticks_ms()
             else:
+                # Zero delay — skip ALL_OFF, let next _fire_step
+                # set the bitmask directly (avoids loop stutter)
                 self._advance_step(now)
 
     def _igniter_off(self, now):

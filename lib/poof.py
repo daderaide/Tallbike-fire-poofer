@@ -25,6 +25,7 @@ _executor = None
 
 # Macro storage
 _macros = {}
+_macros_reload_pending = False
 
 def _resolve_macro(idx):
     """Resolve macro index to macro dict. 0=main_poof, 1+=aux by sorted name."""
@@ -84,6 +85,15 @@ def load_macros():
                     pass
     except:
         pass
+
+def load_macros_or_defer():
+    """Reload macros now if executor is idle, otherwise defer."""
+    global _macros_reload_pending
+    if _executor is not None and _executor.running:
+        _macros_reload_pending = True
+    else:
+        load_macros()
+        _macros_reload_pending = False
 
 def init():
     """Initialize sensors. Call once at startup."""
@@ -178,6 +188,11 @@ def process_commands():
     if _executor.running:
         _executor.update()
 
+    # Drain deferred macro reload when executor is idle
+    if _macros_reload_pending and not _executor.running:
+        load_macros()
+        _macros_reload_pending = False
+
 # Config sync buffer
 _config_buf = bytearray()
 _config_expected_len = 0
@@ -230,7 +245,7 @@ def _handle_config_sync(changed):
                             fname = f[:-5]
                             if fname not in incoming:
                                 os.remove('/macros/' + f)
-                    load_macros()
+                    load_macros_or_defer()
                 modbus.set_hreg(103, 0)
             except:
                 modbus.set_hreg(8, 5)
