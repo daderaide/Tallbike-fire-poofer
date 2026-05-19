@@ -133,7 +133,7 @@ def get_macro(name):
     return _macros.get(name)
 
 def process_commands():
-    global armed, _executor
+    global armed, _executor, _macros_reload_pending
 
     if _executor is None:
         from executor import Executor

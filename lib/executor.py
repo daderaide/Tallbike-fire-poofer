@@ -229,7 +229,7 @@ class Executor:
         # Open valves
         bitmask = ALL_OFF
         for v in step.get('valves', []):
-            bit = v - 1
+            bit = 8 - v
             bitmask &= ~(1 << bit)
         self._set_relays(bitmask)
 
