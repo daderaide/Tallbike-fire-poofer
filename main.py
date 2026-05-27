@@ -208,6 +208,7 @@ async def control_main():
             if batt_counter >= 50:  # every ~500ms
                 batt_counter = 0
                 ctrl_mv = battery.read_control()
+                menu.home.batt_ctrl = ctrl_mv
                 if connected and ctrl_mv > 0:
                     queue_cmd(3, 6, ctrl_mv)  # low priority, reg 6
 

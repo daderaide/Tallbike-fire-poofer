@@ -115,22 +115,38 @@ def read_pressure_raw():
     except:
         return 0
 
-def percent_1s(mv):
-    """Approximate percentage for 1S LiPo from voltage in mV."""
-    if mv >= LIPO_1S_FULL:
+# 1S LiPo OCV-to-SOC lookup table (mV, percent)
+# Based on typical LiPo open-circuit voltage curve at near-zero load
+_OCV_1S = (
+    (4200, 100), (4150, 95), (4110, 90), (4080, 85), (4020, 80),
+    (3980, 75), (3920, 70), (3870, 65), (3830, 60), (3790, 55),
+    (3750, 50), (3710, 45), (3680, 40), (3650, 35), (3620, 30),
+    (3580, 25), (3530, 20), (3490, 15), (3420, 10), (3350, 5),
+    (3000, 0),
+)
+
+def _ocv_lookup(mv, table):
+    """Piecewise linear interpolation against OCV table."""
+    if mv >= table[0][0]:
         return 100
-    if mv <= LIPO_1S_EMPTY:
+    if mv <= table[-1][0]:
         return 0
-    # Linear approximation between empty and full
-    return int((mv - LIPO_1S_EMPTY) * 100 / (LIPO_1S_FULL - LIPO_1S_EMPTY))
+    for i in range(len(table) - 1):
+        v_hi, p_hi = table[i]
+        v_lo, p_lo = table[i + 1]
+        if mv >= v_lo:
+            # Linear interpolate within this segment
+            return p_lo + (p_hi - p_lo) * (mv - v_lo) // (v_hi - v_lo)
+    return 0
+
+def percent_1s(mv):
+    """SOC estimate for 1S LiPo from OCV in mV."""
+    return _ocv_lookup(mv, _OCV_1S)
 
 def percent_3s(mv):
-    """Approximate percentage for 3S LiPo from voltage in mV."""
-    if mv >= LIPO_3S_FULL:
-        return 100
-    if mv <= LIPO_3S_EMPTY:
-        return 0
-    return int((mv - LIPO_3S_EMPTY) * 100 / (LIPO_3S_FULL - LIPO_3S_EMPTY))
+    """SOC estimate for 3S LiPo from OCV in mV."""
+    # Convert to per-cell mV and use same curve
+    return _ocv_lookup(mv // 3, _OCV_1S)
 
 def check_warnings():
     """Return list of warning strings for low batteries."""

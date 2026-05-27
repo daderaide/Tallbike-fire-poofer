@@ -833,22 +833,32 @@ class BatteryScreen(Screen):
     def items(self):
         from battery import percent_1s, percent_3s
         h = self.home
+
+        # Control box battery is always local
+        ctrl_pct = percent_1s(h.batt_ctrl) if h.batt_ctrl > 0 else 0
+        ctrl_str = '{}mV  {}%'.format(h.batt_ctrl, ctrl_pct) if h.batt_ctrl > 0 else '--'
+
         if h is None or not h.connected:
-            return ['Battery Monitor', 'No data', 'Done']
-
-        ctrl_pct = percent_1s(h.batt_ctrl)
-        ign_pct = percent_1s(h.batt_ign)
-        valve_pct = percent_3s(h.batt_valve)
-
-        rows = [
-            'Ctrl:  {}mV  {}%'.format(h.batt_ctrl, ctrl_pct),
-            'Ign:   {}mV  {}%'.format(h.batt_ign, ign_pct),
-            'Valve: {}mV  {}%'.format(h.batt_valve, valve_pct),
-            'Done'
-        ]
+            rows = [
+                'Ctrl:  {}'.format(ctrl_str),
+                'Ign:   --',
+                'Valve: --',
+                'Done'
+            ]
+        else:
+            ign_pct = percent_1s(h.batt_ign)
+            valve_pct = percent_3s(h.batt_valve)
+            ign_str = '{}mV  {}%'.format(h.batt_ign, ign_pct) if h.batt_ign > 0 else '--'
+            valve_str = '{}mV  {}%'.format(h.batt_valve, valve_pct) if h.batt_valve > 0 else '--'
+            rows = [
+                'Ctrl:  {}'.format(ctrl_str),
+                'Ign:   {}'.format(ign_str),
+                'Valve: {}'.format(valve_str),
+                'Done'
+            ]
 
         # Auto-refresh when values change
-        cur = (h.batt_ctrl, h.batt_ign, h.batt_valve)
+        cur = (h.batt_ctrl, h.batt_ign, h.batt_valve, h.connected)
         if cur != self._last_values:
             self._last_values = cur
             self.mark_dirty()
